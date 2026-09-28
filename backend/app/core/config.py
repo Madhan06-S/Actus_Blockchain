@@ -12,6 +12,12 @@ class Settings(BaseSettings):
     PORT: int = 8000
     HOST: str = "0.0.0.0"
 
+    # MST Blockchain Configuration
+    MST_RPC_URL: str = "https://testnetrpc.mstblockchain.com"
+    MST_CHAIN_ID: int = 91562037
+    MST_PRIVATE_KEY: str | None = None
+    MST_CONTRACT_ADDRESS: str | None = None
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

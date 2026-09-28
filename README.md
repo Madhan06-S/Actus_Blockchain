@@ -142,6 +142,13 @@ Phase 4 translates validated `ActusContract` models into an ordered, determinist
 - `POST /api/v1/contracts/{contract_id}/hash`: Generates canonical payload and SHA-256 integrity hash.
 - `GET /api/v1/contracts/{contract_id}/hash`: Retrieves stored SHA-256 integrity hash and canonical payload.
 - `POST /api/v1/contracts/{contract_id}/hash/verify`: Recalculates SHA-256 hash and verifies integrity against stored hash.
+- `GET /api/v1/blockchain/health`: Checks MST RPC connectivity and network chain ID.
+- `POST /api/v1/contracts/{contract_id}/blockchain/link`: Links backend FinancialContract ID to deployed EVM contract address.
+- `GET /api/v1/contracts/{contract_id}/blockchain`: Retrieves registered blockchain contract link.
+- `GET /api/v1/blockchain/contracts/{address}`: Reads live `FinancialContractV2` state from MST Blockchain.
+- `GET /api/v1/blockchain/contracts/{address}/payments`: Reads `PaymentRecorded` event logs from MST Blockchain.
+- `GET /api/v1/contracts/{contract_id}/blockchain/hash-verification`: Compares Phase 6 SHA-256 with on-chain `actusHash`.
+- `GET /api/v1/contracts/{contract_id}/blockchain/compare`: Reconciles expected ACTUS cash flows against actual on-chain payment logs.
 
 ---
 
@@ -176,6 +183,23 @@ Phase 6 creates a deterministic SHA-256 cryptographic fingerprint (`ContractHash
 3. **Deterministic Serialization**: Enforces lexicographical key sorting (`sort_keys=True`), compact JSON separators (`,`, `:`), and UTF-8 encoding.
 4. **SHA-256 Hash Digest**: Uses Python standard library `hashlib.sha256` to output a 64-character lowercase hexadecimal string.
 5. **Integrity Verification**: Endpoint `/hash/verify` recalculates the SHA-256 digest from live contract data and detects any unauthorized modifications.
+
+---
+
+## Phase 7 — Blockchain Integration and Payment Reconciliation
+
+
+### Overview
+Phase 7 integrates the off-chain financial backend with Person 2's `FinancialContractV2` smart contract deployed on the MST Blockchain (`chain_id=91562037`). It reads on-chain contract state and `PaymentRecorded` event logs, performs SHA-256 $\leftrightarrow$ `bytes32` hash verification, and reconciles expected ACTUS cash flows against actual blockchain payment transactions.
+
+### Key Features & Design Rules
+1. **Blockchain Client Abstraction (`MSTBlockchainClient`)**: Environment-driven RPC connection wrapper using `web3.py`. Startup is non-blocking if RPC is unconfigured. Private keys are never exposed in logs or API responses.
+2. **SHA-256 $\leftrightarrow$ `bytes32` Conversion**: Converts 64-character hex strings to 32 bytes and compares Phase 6 contract fingerprints against on-chain `actusHash`.
+3. **Monetary Unit Conversion**: Standardized conversion boundary: ₹1.00 = 1 contract accounting unit (`100,000 INR` $\rightarrow$ `100000`).
+4. **Expected-vs-Actual Comparison Engine**: Chronological matching algorithm pairing expected ACTUS cash flows with actual `PaymentRecorded` logs, identifying `MATCHED`, `AMOUNT_VARIANCE`, `DATE_VARIANCE`, `UNPAID`, and `UNEXPECTED` payments.
+5. **Known Limitations**:
+   - `recordPayment()` on Solidity updates accounting totals (`totalPaid`) but does not execute token transfers.
+   - Solidity contract completion occurs when `totalPaid >= principal`.
 
 ---
 
@@ -223,11 +247,30 @@ Access interactive API docs at:
 
 ### 5. Run Automated Tests
 
-Execute `pytest` to run all test suites (120 total tests):
+Execute `pytest` to run all test suites (152 total tests):
 
 ```bash
 pytest
 ```
+
+---
+
+## Phase 8 — Financial Risk / Status Layer
+
+### Overview
+Phase 8 introduces a deterministic, rule-based financial status evaluation layer that reconciles ACTUS off-chain expected schedules against MST Blockchain execution logs without relying on arbitrary numerical risk scores.
+
+### Key Features & Status Definitions
+1. **Endpoint**: `GET /api/v1/contracts/{contract_id}/status`
+2. **Status Metrics**:
+   - `overall_status`: `ON_TRACK`, `DEVIATION_DETECTED`, `OVERDUE`, or `COMPLETED`.
+   - `blockchain_status`: Reached `COMPLETED` when total principal paid on-chain matches `principalAmount`.
+   - `unpaid_payment_count` vs `overdue_payment_count`: Differentiates future scheduled payments (`expected_date > evaluation_date`) from past due payments (`expected_date <= evaluation_date`).
+   - `net_amount_variance`: `total_actual_paid - total_expected_amount`.
+3. **ACTUS vs Blockchain Completion Rule**:
+   - ACTUS completion requires `total_actual_paid >= total_expected_amount` (principal + interest) with 0 unpaid/overdue events.
+   - `blockchain_status = COMPLETED` while `overall_status = DEVIATION_DETECTED` correctly reports when on-chain principal is fully settled but contractual interest remains outstanding.
+4. **Factual Status Reasons**: Evaluates status objectively, yielding clear statements like `"Actual paid amount is ₹100000.00 versus expected ₹110747.84."`
 
 ---
 
@@ -251,7 +294,8 @@ Actus_blockchain/
 │   │   │       ├── contract_hash.py
 │   │   │       ├── contracts.py
 │   │   │       ├── documents.py
-│   │   │       └── health.py
+│   │   │       ├── health.py
+│   │   │       └── risk_status.py
 │   │   │
 │   │   ├── core/
 │   │   │   ├── __init__.py
@@ -265,7 +309,8 @@ Actus_blockchain/
 │   │   │   ├── common.py
 │   │   │   ├── contract.py
 │   │   │   ├── contract_hash.py
-│   │   │   └── document.py
+│   │   │   ├── document.py
+│   │   │   └── risk_status.py
 │   │   │
 │   │   ├── repositories/
 │   │   │   ├── __init__.py
@@ -284,7 +329,8 @@ Actus_blockchain/
 │   │   │   ├── common.py
 │   │   │   ├── contract.py
 │   │   │   ├── contract_hash.py
-│   │   │   └── document.py
+│   │   │   ├── document.py
+│   │   │   └── risk_status.py
 │   │   │
 │   │   └── services/
 │   │       ├── __init__.py
@@ -293,6 +339,7 @@ Actus_blockchain/
 │   │       ├── actus_event_service.py
 │   │       ├── actus_mapper.py
 │   │       ├── actus_service.py
+│   │       ├── blockchain_service.py
 │   │       ├── cash_flow_calculator.py
 │   │       ├── cash_flow_service.py
 │   │       ├── contract_canonicalizer.py
@@ -302,17 +349,20 @@ Actus_blockchain/
 │   │       ├── contract_term_extractor.py
 │   │       ├── document_service.py
 │   │       ├── document_text_extractor.py
-│   │       └── health_service.py
+│   │       ├── health_service.py
+│   │       └── risk_status_service.py
 │   │
 │   └── tests/
 │       ├── __init__.py
 │       ├── test_actus.py
 │       ├── test_actus_events.py
+│       ├── test_blockchain.py
 │       ├── test_cash_flows.py
 │       ├── test_contract_hash.py
 │       ├── test_contracts.py
 │       ├── test_documents.py
-│       └── test_health.py
+│       ├── test_health.py
+│       └── test_risk_status.py
 │
 ├── docs/
 │   └── architecture.md

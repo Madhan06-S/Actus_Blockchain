@@ -22,7 +22,7 @@ flowchart TD
 
 ---
 
-## End-to-End System Pipeline (Phase 0 – Phase 6)
+## End-to-End System Pipeline (Phase 0 – Phase 8)
 
 ```mermaid
 flowchart TD
@@ -39,7 +39,58 @@ flowchart TD
     K -->|Phase 5 Amortization| L[Cash Flow Simulation Result]
     F & H -->|POST /api/v1/contracts/id/hash| M[Contract Canonicalizer & Hasher]
     M -->|Phase 6 Canonical Payload v1| N[SHA-256 Digest 64-hex]
+    F -->|POST /api/v1/contracts/id/blockchain/link| O[Contract Linker]
+    O -->|Phase 7 Address Link| P[MST Blockchain Client]
+    P -->|GET /blockchain/contracts/addr/payments| Q[PaymentRecorded Events]
+    L & Q -->|GET /contracts/id/blockchain/compare| R[Expected vs Actual Comparison Engine]
+    R -->|GET /contracts/id/status| S[Financial Risk / Status Service]
 ```
+
+---
+
+## Phase 8 Financial Risk / Status Layer Specification
+
+Phase 8 implements a factual, rule-based status and reconciliation layer evaluating off-chain ACTUS payment schedules against on-chain blockchain execution states.
+
+### Key Principles & Features:
+1. **Endpoint**: `GET /api/v1/contracts/{contract_id}/status`
+2. **Status Definitions (`FinancialStatusEnum`)**:
+   - `COMPLETED`: ACTUS financial schedule fully satisfied (`total_actual_paid >= total_expected_amount`, zero unpaid payments, zero overdue payments).
+   - `OVERDUE`: Schedule incomplete and at least one expected payment has passed the evaluation date without receipt (`overdue_payment_count > 0`).
+   - `DEVIATION_DETECTED`: Schedule incomplete/not overdue, but payment discrepancies exist (underpayments, overpayments, unexpected payments, or payment date shifts).
+   - `ON_TRACK`: No overdue payments, no payment deviations, schedule ongoing and on schedule.
+3. **On-Chain vs. ACTUS Completion Distinction**:
+   - `blockchain_status` (Solidity): Reaches `COMPLETED` when total principal paid reaches `principalAmount` (ignores interest).
+   - `overall_status` (ACTUS): Reaches `COMPLETED` only when full principal + interest schedule is satisfied. `blockchain_status = COMPLETED` while `overall_status = DEVIATION_DETECTED` is a valid state when principal is paid but interest remains unpaid.
+4. **Overdue vs. Future Unpaid Metrics**:
+   - Payments where `actual_payment is None` are split by `expected_date` relative to UTC `evaluation_date`:
+     - `expected_date > evaluation_date` $\rightarrow$ `unpaid_payment_count` (future scheduled payments, normal).
+     - `expected_date <= evaluation_date` $\rightarrow$ `overdue_payment_count` (past due payments).
+5. **Net Amount Variance**:
+   - Calculated as `total_actual_paid - total_expected_amount`. Negative values indicate underpayment; positive values indicate overpayment.
+6. **Objective & Factual Status Reasons**:
+   - Explains status strictly with numeric facts (e.g., `"Actual paid amount is ₹100000.00 versus expected ₹110747.84."`) without subjective risk labels.
+
+---
+
+## Phase 7 Blockchain Integration & Payment Reconciliation Specification
+
+Phase 7 connects off-chain ACTUS contract representations and expected cash flows with Person 2's `FinancialContractV2` smart contract on the MST Blockchain.
+
+### Key Principles & Features:
+1. **Client Abstraction (`MSTBlockchainClient`)**:
+   - Environment-driven RPC configuration (`MST_RPC_URL`, `MST_CHAIN_ID=91562037`).
+   - App startup does not depend on RPC availability.
+   - Private keys are strictly protected and never exposed in API responses or logs.
+2. **Hash Normalization & Conversion**:
+   - Converts Phase 6 64-character lowercase SHA-256 string $\leftrightarrow$ 32-byte Solidity `bytes32`.
+   - Endpoint `/hash-verification` compares backend SHA-256 against on-chain `actusHash`.
+3. **Monetary Unit Conversion**:
+   - Explicit conversion boundary: ₹1.00 = 1 contract accounting unit (`100,000 INR` $\rightarrow$ `100000`).
+4. **Expected-vs-Actual Payment Reconciliation**:
+   - Chronological matching algorithm pairing expected ACTUS cash flow `#k` with `PaymentRecorded` event log `#k`.
+   - Reconciles date variance (days) and amount variance (monetary units).
+   - Classifies items as `MATCHED`, `AMOUNT_VARIANCE`, `DATE_VARIANCE`, `UNPAID`, or `UNEXPECTED`.
 
 ---
 
