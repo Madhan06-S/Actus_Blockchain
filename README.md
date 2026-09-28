@@ -56,76 +56,126 @@ Dashboard
 
 ---
 
-## Phase 1 — Financial Contract Input and Validation
+## Phase 4 — ACTUS Event Generation
 
 ### Overview
-Phase 1 enables the backend to receive, validate, normalize, and store financial contracts.
+Phase 4 translates validated `ActusContract` models into an ordered, deterministic timeline of **Expected Contractual Events** (`ActusEvent`).
 
-Supported Financial Product:
-- **FIXED-RATE AMORTIZING LOAN WITH FIXED PERIODIC PAYMENTS**
-- Intended future ACTUS contract mapping: **ANN (Annuity)**
+### Key Features & Design Rules
+1. **Official ACTUS Event Types**:
+   - `IED`: Initial Exchange Date (Initial principal disbursement/exchange).
+   - `IP`: Interest Payment (Periodic scheduled interest payment).
+   - `PR`: Principal Redemption (Periodic scheduled principal repayment for `ANN`/`LAM`).
+   - `PP`: Principal Prepayment (Generated only when explicit prepayment terms exist).
+   - `MD`: Maturity Date (Contract maturity event).
+2. **Contract Type Event Logic**:
+   - **ANN (Annuity)**: Generates `IED`, periodic `IP` events, periodic `PR` events, and `MD`.
+   - **PAM (Principal at Maturity)**: Generates `IED`, periodic `IP` events, and `MD`. Periodic `PR` events are **NOT** generated.
+   - **LAM (Linear Amortizing)**: Generates `IED`, periodic `IP` events, periodic `PR` events, and `MD`.
+3. **Calendar Month Arithmetic**: `P1M` cycle dates use exact calendar month arithmetic (`Jan 31` → `Feb 28/29` → `Mar 31`), avoiding 30-day approximations.
+4. **Deterministic Event Sorting**: Events are ordered by `event_time`, then by ACTUS priority (`IED` → `PR` → `IP` → `PP` → `MD`).
+5. **No Cash-Flow Simulation**: Monetary cash-flow amounts and amortization engines are intentionally deferred to Phase 5.
 
-### Key Features Implemented in Phase 1
-1. **Contract Ingestion & Schema Validation**: Pydantic schema validation for contract creation.
-2. **Business Rules Validation**:
-   - `principal > 0` (strictly positive monetary amounts)
-   - `annual_interest_rate >= 0` (non-negative percentage)
-   - `start_date < maturity_date` (strict date order)
-   - `currency` non-empty string
-   - Supported `payment_frequency` (`MONTHLY`) and `contract_role` (`RPA`, `RPL`)
-3. **Monetary Precision**: Uses Python's `Decimal` type to avoid binary floating-point representation issues.
-4. **Unique Identification & Timestamps**: Assigns UUID v4 `contract_id` and UTC `created_at` timestamp.
-5. **In-Memory Storage**: Repository pattern decoupling API logic from persistence (`ContractRepository`).
-
-### Example Valid Request (`POST /api/v1/contracts`)
-
-```json
-{
-    "principal": 100000,
-    "currency": "INR",
-    "annual_interest_rate": 10.0,
-    "start_date": "2027-01-01",
-    "maturity_date": "2029-01-01",
-    "payment_frequency": "MONTHLY",
-    "contract_role": "RPA",
-    "description": "Example fixed-rate amortizing loan"
-}
-```
-
-### Example Response (HTTP 201 Created)
+### Example Event Generation Response (`POST /api/v1/contracts/{contract_id}/actus/events`)
 
 ```json
 {
-    "contract_id": "02058345-4328-4cb9-8fe1-17930f416efd",
-    "principal": "100000",
-    "currency": "INR",
-    "annual_interest_rate": "10.0",
-    "start_date": "2027-01-01",
-    "maturity_date": "2029-01-01",
-    "payment_frequency": "MONTHLY",
-    "contract_role": "RPA",
-    "description": "Example fixed-rate amortizing loan",
-    "status": "VALIDATED",
-    "created_at": "2026-09-28T16:36:59.924436Z"
+  "contract_id": "02058345-4328-4cb9-8fe1-17930f416efd",
+  "actus_contract_type": "ANN",
+  "generation_status": "GENERATED",
+  "total_events": 50,
+  "events": [
+    {
+      "event_id": "e1a2b3c4-0000-0000-0000-000000000001",
+      "contract_id": "02058345-4328-4cb9-8fe1-17930f416efd",
+      "event_type": "IED",
+      "event_time": "2027-01-01T00:00:00Z",
+      "sequence": 1,
+      "event_status": "EXPECTED",
+      "source_actus_contract_id": "02058345-4328-4cb9-8fe1-17930f416efd",
+      "event_reference": "Initial Principal Exchange"
+    },
+    {
+      "event_id": "e1a2b3c4-0000-0000-0000-000000000002",
+      "contract_id": "02058345-4328-4cb9-8fe1-17930f416efd",
+      "event_type": "PR",
+      "event_time": "2027-02-01T00:00:00Z",
+      "sequence": 2,
+      "event_status": "EXPECTED",
+      "source_actus_contract_id": "02058345-4328-4cb9-8fe1-17930f416efd",
+      "event_reference": "Scheduled Principal Redemption"
+    },
+    {
+      "event_id": "e1a2b3c4-0000-0000-0000-000000000003",
+      "contract_id": "02058345-4328-4cb9-8fe1-17930f416efd",
+      "event_type": "IP",
+      "event_time": "2027-02-01T00:00:00Z",
+      "sequence": 3,
+      "event_status": "EXPECTED",
+      "source_actus_contract_id": "02058345-4328-4cb9-8fe1-17930f416efd",
+      "event_reference": "Scheduled Interest Payment"
+    }
+  ],
+  "warnings": [],
+  "missing_attributes": []
 }
 ```
-
----
-
-## Phase 1 Limitations
-
-> [!IMPORTANT]
-> **Phase 1 Notice**: Monthly installment calculation, interest accrual calculations, ACTUS event generation, cash-flow schedules, blockchain integration, smart contracts, and risk logic are intentionally NOT implemented in Phase 1.
 
 ---
 
 ## Available API Endpoints
 
-- `GET /`: Returns basic system running status.
-- `GET /health`: Returns system health check status.
-- `POST /api/v1/contracts`: Validates, normalizes, and stores a financial contract (returns 201 Created).
-- `GET /api/v1/contracts/{contract_id}`: Retrieves stored contract by ID (returns 404 if missing).
-- `GET /api/v1/contracts`: Lists all stored contracts in memory.
+- `GET /`: Basic system running status.
+- `GET /health`: Health check indicator.
+- `POST /api/v1/contracts`: Creates and validates a financial contract.
+- `GET /api/v1/contracts/{contract_id}`: Retrieves stored financial contract by ID.
+- `GET /api/v1/contracts`: Lists all stored financial contracts.
+- `POST /api/v1/documents/upload`: Uploads PDF document (max 10 MB).
+- `GET /api/v1/documents/{id}/terms`: Retrieves extracted candidate financial terms.
+- `POST /api/v1/documents/{id}/confirm`: Confirms terms and creates a validated `FinancialContract`.
+- `POST /api/v1/contracts/{contract_id}/actus`: Generates and stores ACTUS contract mapping.
+- `GET /api/v1/contracts/{contract_id}/actus`: Retrieves stored ACTUS contract mapping.
+- `POST /api/v1/contracts/{contract_id}/actus/events`: Generates and stores expected ACTUS contractual event schedule.
+- `GET /api/v1/contracts/{contract_id}/actus/events`: Retrieves expected ACTUS contractual event schedule.
+- `POST /api/v1/contracts/{contract_id}/actus/cash-flows`: Generates and stores expected monetary cash flows and amortization schedule.
+- `GET /api/v1/contracts/{contract_id}/actus/cash-flows`: Retrieves expected monetary cash flows and amortization schedule.
+- `POST /api/v1/contracts/{contract_id}/hash`: Generates canonical payload and SHA-256 integrity hash.
+- `GET /api/v1/contracts/{contract_id}/hash`: Retrieves stored SHA-256 integrity hash and canonical payload.
+- `POST /api/v1/contracts/{contract_id}/hash/verify`: Recalculates SHA-256 hash and verifies integrity against stored hash.
+
+---
+
+## Phase 5 — Cash-Flow Simulation for ACTUS Expected Events
+
+### Overview
+Phase 5 converts expected ACTUS contractual events (`ActusEvent`) into expected monetary cash flows (`CashFlow` & `CashFlowSimulationResult`).
+
+### Key Features & Design Rules
+1. **ANN (Annuity) Support**: Calculates stateful amortization for fixed-rate amortizing loans.
+2. **PMT Periodic Payment Calculation**: Uses exact Decimal financial arithmetic for monthly payments:
+   $$PMT = P \times \frac{r(1+r)^n}{(1+r)^n - 1}$$
+3. **Stateful Amortization Schedule**:
+   - Maintains opening principal, monthly interest portion ($I_t = P_{t-1} \times r$), principal repayment portion ($PR_t = PMT - I_t$), and closing principal balance ($P_t = P_{t-1} - PR_t$).
+   - Reconciles final maturity repayment so `final_outstanding_principal == 0.00`.
+4. **Event Aggregation**: Combines co-occurring `PR` and `IP` events into a single economic payment record (`PR_IP`) while retaining reference event IDs.
+5. **Sign & Direction Semantics**:
+   - **RPA** (Lender): Initial disbursement `IED` is `OUTFLOW` ($-P$), repayments are `INFLOW` ($+PMT$).
+   - **RPL** (Borrower): Initial disbursement `IED` is `INFLOW` ($+P$), repayments are `OUTFLOW` ($-PMT$).
+6. **Decimal Currency Quantization**: Standardized monetary rounding to 2 decimal places (`ROUND_HALF_UP`) for display and `0.01` tolerance for residual balance reconciliation.
+
+---
+
+## Phase 6 — Contract Hashing and Integrity Verification
+
+### Overview
+Phase 6 creates a deterministic SHA-256 cryptographic fingerprint (`ContractHash`) over off-chain financial contract terms and ACTUS mapping data. This hash anchors contract identity for future on-chain verification on the MST Blockchain.
+
+### Key Features & Design Rules
+1. **Canonicalization (`v1`)**: Normalizes Decimal values (`100000.0` -> `"100000.00"`), ISO dates (`YYYY-MM-DD`), and string formats.
+2. **Explicit Allow-List**: Includes core economic terms (`principal`, `currency`, `annual_interest_rate`, `start_date`, `maturity_date`, `payment_frequency`, `contract_role`, ACTUS terms) and excludes non-contractual runtime state (`created_at`, database IDs, UUIDs).
+3. **Deterministic Serialization**: Enforces lexicographical key sorting (`sort_keys=True`), compact JSON separators (`,`, `:`), and UTF-8 encoding.
+4. **SHA-256 Hash Digest**: Uses Python standard library `hashlib.sha256` to output a 64-character lowercase hexadecimal string.
+5. **Integrity Verification**: Endpoint `/hash/verify` recalculates the SHA-256 digest from live contract data and detects any unauthorized modifications.
 
 ---
 
@@ -163,19 +213,17 @@ cp .env.example .env
 
 ### 4. Run the Backend Server
 
-To start the FastAPI server with hot-reload enabled:
-
 ```bash
 uvicorn app.main:app --reload --port 8000
 ```
 
-Once running, access the interactive API docs at:
+Access interactive API docs at:
 - Swagger UI: [http://localhost:8000/docs](http://localhost:8000/docs)
 - Redoc: [http://localhost:8000/redoc](http://localhost:8000/redoc)
 
 ### 5. Run Automated Tests
 
-Execute `pytest` to run all unit and API tests:
+Execute `pytest` to run all test suites (120 total tests):
 
 ```bash
 pytest
@@ -197,7 +245,12 @@ Actus_blockchain/
 │   │   │   ├── __init__.py
 │   │   │   └── routes/
 │   │   │       ├── __init__.py
+│   │   │       ├── actus.py
+│   │   │       ├── actus_events.py
+│   │   │       ├── cash_flows.py
+│   │   │       ├── contract_hash.py
 │   │   │       ├── contracts.py
+│   │   │       ├── documents.py
 │   │   │       └── health.py
 │   │   │
 │   │   ├── core/
@@ -206,30 +259,66 @@ Actus_blockchain/
 │   │   │
 │   │   ├── models/
 │   │   │   ├── __init__.py
+│   │   │   ├── actus.py
+│   │   │   ├── actus_event.py
+│   │   │   ├── cash_flow.py
 │   │   │   ├── common.py
-│   │   │   └── contract.py
+│   │   │   ├── contract.py
+│   │   │   ├── contract_hash.py
+│   │   │   └── document.py
 │   │   │
 │   │   ├── repositories/
 │   │   │   ├── __init__.py
-│   │   │   └── contract_repository.py
+│   │   │   ├── actus_event_repository.py
+│   │   │   ├── actus_repository.py
+│   │   │   ├── cash_flow_repository.py
+│   │   │   ├── contract_hash_repository.py
+│   │   │   ├── contract_repository.py
+│   │   │   └── document_repository.py
 │   │   │
 │   │   ├── schemas/
 │   │   │   ├── __init__.py
+│   │   │   ├── actus.py
+│   │   │   ├── actus_event.py
+│   │   │   ├── cash_flow.py
 │   │   │   ├── common.py
-│   │   │   └── contract.py
+│   │   │   ├── contract.py
+│   │   │   ├── contract_hash.py
+│   │   │   └── document.py
 │   │   │
 │   │   └── services/
 │   │       ├── __init__.py
+│   │       ├── actus_cycle.py
+│   │       ├── actus_event_generator.py
+│   │       ├── actus_event_service.py
+│   │       ├── actus_mapper.py
+│   │       ├── actus_service.py
+│   │       ├── cash_flow_calculator.py
+│   │       ├── cash_flow_service.py
+│   │       ├── contract_canonicalizer.py
+│   │       ├── contract_hash_service.py
+│   │       ├── contract_hasher.py
 │   │       ├── contract_service.py
+│   │       ├── contract_term_extractor.py
+│   │       ├── document_service.py
+│   │       ├── document_text_extractor.py
 │   │       └── health_service.py
 │   │
 │   └── tests/
 │       ├── __init__.py
+│       ├── test_actus.py
+│       ├── test_actus_events.py
+│       ├── test_cash_flows.py
+│       ├── test_contract_hash.py
 │       ├── test_contracts.py
+│       ├── test_documents.py
 │       └── test_health.py
 │
 ├── docs/
 │   └── architecture.md
+│
+├── storage/
+│   └── documents/        (Ignored in .gitignore)
 │
 ├── .env
 ├── .env.example

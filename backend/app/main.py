@@ -8,7 +8,12 @@ if str(backend_dir) not in sys.path:
 
 from fastapi import FastAPI
 
+from app.api.routes.actus import router as actus_router
+from app.api.routes.actus_events import router as actus_events_router
+from app.api.routes.cash_flows import router as cash_flows_router
+from app.api.routes.contract_hash import router as contract_hash_router
 from app.api.routes.contracts import router as contracts_router
+from app.api.routes.documents import router as documents_router
 from app.api.routes.health import router as health_router
 from app.core.config import settings
 
@@ -25,6 +30,11 @@ def create_application() -> FastAPI:
     # Register API routers
     app.include_router(health_router)
     app.include_router(contracts_router)
+    app.include_router(documents_router)
+    app.include_router(actus_router)
+    app.include_router(actus_events_router)
+    app.include_router(cash_flows_router)
+    app.include_router(contract_hash_router)
 
     return app
 
