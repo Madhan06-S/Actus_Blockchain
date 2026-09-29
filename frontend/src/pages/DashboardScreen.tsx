@@ -15,8 +15,8 @@ import { LiquidityScreen } from './LiquidityScreen';
 import { FileText, RefreshCw, HelpCircle } from 'lucide-react';
 
 interface DashboardScreenProps {
-  contract: FinancialContract | null;
-  statusData: RiskStatusResponse | null;
+  contract: FinancialContract;
+  statusData: RiskStatusResponse;
   comparisonItems: ComparisonItem[];
   riskData: RiskPredictionResponse | null;
   activeTab: string;
@@ -36,15 +36,6 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   const formatCurrency = (val: string) => {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(parseFloat(val));
   };
-
-  // Guard: show loading placeholder if data not yet available
-  if (!contract || !statusData) {
-    return (
-      <div style={{ padding: '4rem', textAlign: 'center', color: '#64748b' }}>
-        Loading contract dashboard…
-      </div>
-    );
-  }
 
   return (
     <div style={{ padding: '2rem 2.5rem', display: 'flex', flexDirection: 'column', gap: '2rem' }} className="animate-fade-in">
@@ -75,7 +66,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
               Annuity Loan ({formatCurrency(contract.principal)})
             </h2>
             <div style={{ fontSize: '0.85rem', color: '#475569', marginTop: '0.15rem' }}>
-              {contract.annual_interest_rate}% annual interest • {contract.payment_frequency} payments • {contract.start_date} → {contract.maturity_date}
+              10% annual interest • Monthly payments • {contract.start_date} → {contract.maturity_date}
             </div>
           </div>
         </div>
@@ -182,4 +173,3 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
     </div>
   );
 };
-

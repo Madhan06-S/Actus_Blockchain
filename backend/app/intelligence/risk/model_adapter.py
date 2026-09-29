@@ -5,14 +5,14 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 MODEL_FILE_LOCATIONS = [
-    Path("backend/app/intelligence/risk/actus_risk_model.pkl"),
     Path("storage/models/actus_risk_model.pkl"),
+    Path("backend/app/intelligence/risk/actus_risk_model.pkl"),
     Path("actus_risk_model.pkl"),
 ]
 
 FEATURE_COLS_LOCATIONS = [
-    Path("backend/app/intelligence/risk/feature_cols.json"),
     Path("storage/models/feature_cols.json"),
+    Path("backend/app/intelligence/risk/feature_cols.json"),
     Path("feature_cols.json"),
 ]
 
