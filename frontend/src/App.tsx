@@ -38,11 +38,10 @@ export const App: React.FC = () => {
     setSelectedFile(file);
 
     try {
-      const confirmRes = await contractsApi.confirmDocument(docId);
-      setTerms(confirmRes.terms);
+      const extractedTerms = await contractsApi.getExtractedTerms(docId);
+      setTerms(extractedTerms);
     } catch (err) {
       console.warn('Backend candidate terms extraction fallback:', err);
-      setTerms(DEMO_CANDIDATE_TERMS);
     }
     setStage('review');
   };
@@ -56,7 +55,13 @@ export const App: React.FC = () => {
   // 3. Handle Analysis Completion
   const handleAnalysisComplete = async () => {
     try {
-      const createdContract = await contractsApi.createContract(terms);
+      let createdContract: FinancialContract;
+      if (documentId) {
+        const confirmRes = await contractsApi.confirmDocument(documentId, terms);
+        createdContract = confirmRes.contract;
+      } else {
+        createdContract = await contractsApi.createContract(terms);
+      }
       setContract(createdContract);
 
       const statusRes = await contractsApi.getStatus(createdContract.contract_id);
@@ -74,9 +79,18 @@ export const App: React.FC = () => {
       }
     } catch (err) {
       console.warn('Backend status fetch fallback to demo dataset:', err);
-      setContract(DEMO_FINANCIAL_CONTRACT);
-      setStatusData(DEMO_RISK_STATUS);
-      setComparisonItems(DEMO_COMPARISON_ITEMS);
+      try {
+        const createdContract = await contractsApi.createContract(terms);
+        setContract(createdContract);
+        const statusRes = await contractsApi.getStatus(createdContract.contract_id);
+        setStatusData(statusRes);
+        const compRes = await contractsApi.getComparison(createdContract.contract_id);
+        setComparisonItems(compRes.items);
+      } catch {
+        setContract(DEMO_FINANCIAL_CONTRACT);
+        setStatusData(DEMO_RISK_STATUS);
+        setComparisonItems(DEMO_COMPARISON_ITEMS);
+      }
     }
     setStage('dashboard');
   };

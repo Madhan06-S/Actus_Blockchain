@@ -11,7 +11,6 @@ import type {
   ChatResponse,
 } from '../types/contract';
 import {
-  DEMO_CANDIDATE_TERMS,
   DEMO_FINANCIAL_CONTRACT,
   DEMO_RISK_STATUS,
   DEMO_COMPARISON_ITEMS,
@@ -42,15 +41,18 @@ export const contractsApi = {
     return await res.json();
   },
 
-  // Confirm PDF Terms & Extract Candidates (Phase 2)
-  async confirmDocument(documentId: string): Promise<{ terms: CandidateTerms }> {
-    try {
-      return await fetchApi<{ terms: CandidateTerms }>(`/api/v1/documents/${documentId}/confirm`, {
-        method: 'POST',
-      });
-    } catch {
-      return { terms: DEMO_CANDIDATE_TERMS };
-    }
+  // Get Extracted Candidate Terms for Document (Phase 2)
+  async getExtractedTerms(documentId: string): Promise<CandidateTerms> {
+    const res = await fetchApi<{ document_id: string; terms: CandidateTerms }>(`/api/v1/documents/${documentId}/terms`);
+    return res.terms;
+  },
+
+  // Confirm PDF Terms & Create Validated FinancialContract (Phase 2)
+  async confirmDocument(documentId: string, terms: CandidateTerms): Promise<{ contract: FinancialContract; terms: CandidateTerms }> {
+    return await fetchApi<{ contract: FinancialContract; terms: CandidateTerms }>(`/api/v1/documents/${documentId}/confirm`, {
+      method: 'POST',
+      body: JSON.stringify({ confirmed_terms: terms }),
+    });
   },
 
   // Create Financial Contract (Phase 1)
