@@ -1,5 +1,5 @@
 import React from 'react';
-import type { FinancialContract, RiskStatusResponse, ComparisonItem } from '../types/contract';
+import type { FinancialContract, RiskStatusResponse, ComparisonItem, RiskPredictionResponse } from '../types/contract';
 import { StatusBadge } from '../components/StatusBadge';
 import { ExpectedVsActualCard } from '../components/ExpectedVsActualCard';
 import { PaymentTimeline } from '../components/PaymentTimeline';
@@ -7,22 +7,31 @@ import { IntegrityCard } from '../components/IntegrityCard';
 import { RecordedActivityCard } from '../components/RecordedActivityCard';
 import { ContractRulesCard } from '../components/ContractRulesCard';
 import { TechnicalDetailsDrawer } from '../components/TechnicalDetailsDrawer';
+import { AIRiskCard } from '../components/AIRiskCard';
+import { RiskAnalysisScreen } from './RiskAnalysisScreen';
+import { StressTestScreen } from './StressTestScreen';
+import { NegotiationScreen } from './NegotiationScreen';
+import { LiquidityScreen } from './LiquidityScreen';
 import { FileText, RefreshCw, HelpCircle } from 'lucide-react';
 
 interface DashboardScreenProps {
   contract: FinancialContract;
   statusData: RiskStatusResponse;
   comparisonItems: ComparisonItem[];
+  riskData: RiskPredictionResponse | null;
   activeTab: string;
   onRestart: () => void;
+  setActiveTab: (tab: string) => void;
 }
 
 export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   contract,
   statusData,
   comparisonItems,
+  riskData,
   activeTab,
   onRestart,
+  setActiveTab,
 }) => {
   const formatCurrency = (val: string) => {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(parseFloat(val));
@@ -66,6 +75,12 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           <RefreshCw size={15} /> Upload Another Contract
         </button>
       </div>
+
+      {/* INTELLIGENCE TABS */}
+      {activeTab === 'risk' && <RiskAnalysisScreen contract={contract} riskData={riskData} />}
+      {activeTab === 'stress' && <StressTestScreen contract={contract} />}
+      {activeTab === 'negotiation' && <NegotiationScreen contract={contract} />}
+      {activeTab === 'liquidity' && <LiquidityScreen />}
 
       {/* OVERVIEW TAB CONTENT */}
       {(activeTab === 'overview' || activeTab === 'contract') && (
@@ -125,6 +140,9 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
 
           {/* EXPECTED VS ACTUAL CARD */}
           <ExpectedVsActualCard statusData={statusData} />
+
+          {/* AI RISK ANALYSIS CARD */}
+          <AIRiskCard riskData={riskData} onViewDetails={() => setActiveTab('risk')} />
         </>
       )}
 

@@ -5,7 +5,8 @@ import { UploadScreen } from './pages/UploadScreen';
 import { ReviewTermsScreen } from './pages/ReviewTermsScreen';
 import { AnalysisScreen } from './pages/AnalysisScreen';
 import { DashboardScreen } from './pages/DashboardScreen';
-import type { CandidateTerms, FinancialContract, RiskStatusResponse, ComparisonItem } from './types/contract';
+import { AIChatbotDrawer } from './components/AIChatbotDrawer';
+import type { CandidateTerms, FinancialContract, RiskStatusResponse, ComparisonItem, RiskPredictionResponse } from './types/contract';
 import {
   DEMO_CANDIDATE_TERMS,
   DEMO_FINANCIAL_CONTRACT,
@@ -29,6 +30,7 @@ export const App: React.FC = () => {
   const [contract, setContract] = useState<FinancialContract>(DEMO_FINANCIAL_CONTRACT);
   const [statusData, setStatusData] = useState<RiskStatusResponse>(DEMO_RISK_STATUS);
   const [comparisonItems, setComparisonItems] = useState<ComparisonItem[]>(DEMO_COMPARISON_ITEMS);
+  const [riskData, setRiskData] = useState<RiskPredictionResponse | null>(null);
 
   // 1. Handle PDF Upload Success from Real Backend
   const handleUploadSuccess = async (docId: string, file: File) => {
@@ -62,6 +64,14 @@ export const App: React.FC = () => {
 
       const compRes = await contractsApi.getComparison(createdContract.contract_id);
       setComparisonItems(compRes.items);
+
+      // Fetch AI Risk Prediction automatically (non-blocking fallback)
+      try {
+        const riskRes = await contractsApi.getRiskAnalysis(createdContract.contract_id);
+        setRiskData(riskRes);
+      } catch (rErr) {
+        console.warn('AI Risk analysis fetch fallback:', rErr);
+      }
     } catch (err) {
       console.warn('Backend status fetch fallback to demo dataset:', err);
       setContract(DEMO_FINANCIAL_CONTRACT);
@@ -111,12 +121,19 @@ export const App: React.FC = () => {
               contract={contract}
               statusData={statusData}
               comparisonItems={comparisonItems}
+              riskData={riskData}
               activeTab={activeTab}
               onRestart={handleRestart}
+              setActiveTab={setActiveTab}
             />
           )}
         </main>
       </div>
+
+      {/* FLOATING AI CHATBOT DRAWER */}
+      {stage === 'dashboard' && contract && (
+        <AIChatbotDrawer contractId={contract.contract_id} />
+      )}
     </div>
   );
 };

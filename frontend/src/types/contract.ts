@@ -114,3 +114,96 @@ export interface RiskStatusResponse {
   evaluation_date: string;
   status_reasons: string[];
 }
+
+export interface FeatureImportanceItem {
+  name: string;
+  value: unknown;
+  description: string;
+}
+
+export interface RiskPredictionResponse {
+  contract_id: string;
+  default_probability: number | null;
+  default_probability_percent: number | null;
+  risk_category: 'LOW' | 'MEDIUM' | 'HIGH' | 'NOT_AVAILABLE';
+  expected_loss: number | null;
+  recommendation: string;
+  model_available: boolean;
+  estimator_type: string;
+  features_used: FeatureImportanceItem[];
+  message?: string;
+}
+
+export interface YearlyLiquidityItem {
+  year: string;
+  portfolio_inflow: number;
+  bank_outflow: number;
+  net_liquidity: number;
+  status: 'SAFE' | 'DEFICIT_RISK';
+}
+
+export interface LiquidityForecastResponse {
+  forecast: Record<string, YearlyLiquidityItem>;
+  overall_status: 'SAFE' | 'DEFICIT_RISK';
+  total_inflow: number;
+  total_outflow: number;
+  contract_count: number;
+}
+
+export interface StressCaseDetails {
+  annual_interest_rate: number;
+  monthly_payment: number;
+  total_interest: number;
+  total_repayment: number;
+  default_probability?: number | null;
+  risk_category: string;
+}
+
+export interface StressDifferenceDetails {
+  rate_shock_percent: number;
+  additional_monthly_payment: number;
+  additional_interest: number;
+  additional_total_repayment: number;
+  percentage_increase_in_interest: number;
+}
+
+export interface StressTestResponse {
+  contract_id: string;
+  scenario_description: string;
+  base_case: StressCaseDetails;
+  stressed_case: StressCaseDetails;
+  difference: StressDifferenceDetails;
+  risk_impact: {
+    base_risk_category: string;
+    stressed_risk_category: string;
+    base_default_probability: number | null;
+    stressed_default_probability: number | null;
+    category_shifted: boolean;
+    summary: string;
+  };
+}
+
+export interface ProposedTerm {
+  parameter: string;
+  current_value: string;
+  proposed_value: string;
+  reason: string;
+}
+
+export interface NegotiationResponse {
+  contract_id: string;
+  available: boolean;
+  optimized_terms: ProposedTerm[];
+  negotiation_summary: string;
+  revised_actus_json: Record<string, unknown>;
+  requires_human_approval: boolean;
+  message?: string;
+}
+
+export interface ChatResponse {
+  contract_id: string;
+  answer: string;
+  sources: string[];
+  available: boolean;
+  message?: string;
+}
