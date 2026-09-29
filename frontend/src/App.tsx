@@ -7,12 +7,6 @@ import { AnalysisScreen } from './pages/AnalysisScreen';
 import { DashboardScreen } from './pages/DashboardScreen';
 import { AIChatbotDrawer } from './components/AIChatbotDrawer';
 import type { CandidateTerms, FinancialContract, RiskStatusResponse, ComparisonItem, RiskPredictionResponse } from './types/contract';
-import {
-  DEMO_CANDIDATE_TERMS,
-  DEMO_FINANCIAL_CONTRACT,
-  DEMO_RISK_STATUS,
-  DEMO_COMPARISON_ITEMS,
-} from './mock/demoData';
 import { contractsApi } from './api/contractsApi';
 
 export type AppStage = 'upload' | 'review' | 'analysis' | 'dashboard';
@@ -26,22 +20,31 @@ export const App: React.FC = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   // Workflow data state
-  const [terms, setTerms] = useState<CandidateTerms>(DEMO_CANDIDATE_TERMS);
-  const [contract, setContract] = useState<FinancialContract>(DEMO_FINANCIAL_CONTRACT);
-  const [statusData, setStatusData] = useState<RiskStatusResponse>(DEMO_RISK_STATUS);
-  const [comparisonItems, setComparisonItems] = useState<ComparisonItem[]>(DEMO_COMPARISON_ITEMS);
+  const [terms, setTerms] = useState<CandidateTerms | null>(null);
+  const [extractionError, setExtractionError] = useState<string | null>(null);
+  const [contract, setContract] = useState<FinancialContract | null>(null);
+  const [statusData, setStatusData] = useState<RiskStatusResponse | null>(null);
+  const [comparisonItems, setComparisonItems] = useState<ComparisonItem[]>([]);
   const [riskData, setRiskData] = useState<RiskPredictionResponse | null>(null);
 
   // 1. Handle PDF Upload Success from Real Backend
   const handleUploadSuccess = async (docId: string, file: File) => {
+    // Reset all prior state so a new upload never shows stale previous contract
     setDocumentId(docId);
     setSelectedFile(file);
+    setTerms(null);
+    setExtractionError(null);
+    setContract(null);
+    setStatusData(null);
+    setComparisonItems([]);
+    setRiskData(null);
 
     try {
       const extractedTerms = await contractsApi.getExtractedTerms(docId);
       setTerms(extractedTerms);
     } catch (err) {
-      console.warn('Backend candidate terms extraction fallback:', err);
+      const msg = err instanceof Error ? err.message : 'Could not extract contract terms.';
+      setExtractionError(msg);
     }
     setStage('review');
   };
@@ -54,43 +57,62 @@ export const App: React.FC = () => {
 
   // 3. Handle Analysis Completion
   const handleAnalysisComplete = async () => {
+    if (!terms) { setStage('dashboard'); return; }
     try {
-      let createdContract: FinancialContract;
+      let contractId: string;
       if (documentId) {
         const confirmRes = await contractsApi.confirmDocument(documentId, terms);
-        createdContract = confirmRes.contract;
+        contractId = confirmRes.contract_id;
       } else {
-        createdContract = await contractsApi.createContract(terms);
+        const created = await contractsApi.createContract(terms);
+        contractId = created.contract_id;
+        setContract(created);
       }
-      setContract(createdContract);
 
-      const statusRes = await contractsApi.getStatus(createdContract.contract_id);
+      // Fetch full contract details if we only have an ID
+      if (contractId && !contract) {
+        try {
+          const contractDetails = await contractsApi.createContract(terms);
+          setContract(contractDetails);
+        } catch { /* use id only */ }
+      }
+
+      // Use contractId for downstream calls
+      const idToUse = contractId || contract?.contract_id;
+      if (!idToUse) throw new Error('No contract ID available');
+
+      const statusRes = await contractsApi.getStatus(idToUse);
       setStatusData(statusRes);
 
-      const compRes = await contractsApi.getComparison(createdContract.contract_id);
+      const compRes = await contractsApi.getComparison(idToUse);
       setComparisonItems(compRes.items);
 
-      // Fetch AI Risk Prediction automatically (non-blocking fallback)
+      // Set a minimal contract if we don't have one yet
+      if (!contract) {
+        setContract({
+          contract_id: idToUse,
+          principal: terms.principal,
+          currency: terms.currency,
+          annual_interest_rate: terms.annual_interest_rate,
+          start_date: terms.start_date,
+          maturity_date: terms.maturity_date,
+          payment_frequency: terms.payment_frequency,
+          contract_role: terms.contract_role,
+          description: 'Fixed-Rate Annuity Financial Contract',
+          status: 'VALIDATED',
+          created_at: new Date().toISOString(),
+        });
+      }
+
+      // Fetch AI Risk Prediction (non-blocking)
       try {
-        const riskRes = await contractsApi.getRiskAnalysis(createdContract.contract_id);
+        const riskRes = await contractsApi.getRiskAnalysis(idToUse);
         setRiskData(riskRes);
-      } catch (rErr) {
-        console.warn('AI Risk analysis fetch fallback:', rErr);
-      }
+      } catch { /* non-blocking */ }
+
     } catch (err) {
-      console.warn('Backend status fetch fallback to demo dataset:', err);
-      try {
-        const createdContract = await contractsApi.createContract(terms);
-        setContract(createdContract);
-        const statusRes = await contractsApi.getStatus(createdContract.contract_id);
-        setStatusData(statusRes);
-        const compRes = await contractsApi.getComparison(createdContract.contract_id);
-        setComparisonItems(compRes.items);
-      } catch {
-        setContract(DEMO_FINANCIAL_CONTRACT);
-        setStatusData(DEMO_RISK_STATUS);
-        setComparisonItems(DEMO_COMPARISON_ITEMS);
-      }
+      console.warn('Analysis completion fallback:', err);
+      // No demo data fallback — show what we have
     }
     setStage('dashboard');
   };
@@ -99,6 +121,12 @@ export const App: React.FC = () => {
   const handleRestart = () => {
     setDocumentId(null);
     setSelectedFile(null);
+    setTerms(null);
+    setExtractionError(null);
+    setContract(null);
+    setStatusData(null);
+    setComparisonItems([]);
+    setRiskData(null);
     setStage('upload');
     setActiveTab('overview');
   };
@@ -122,7 +150,13 @@ export const App: React.FC = () => {
               documentId={documentId}
               fileName={selectedFile?.name}
               initialTerms={terms}
+              extractionError={extractionError}
               onConfirm={handleConfirmTerms}
+              onRetry={() => {
+                setStage('upload');
+                setTerms(null);
+                setExtractionError(null);
+              }}
             />
           )}
 

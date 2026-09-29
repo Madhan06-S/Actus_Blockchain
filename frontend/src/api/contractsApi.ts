@@ -42,17 +42,47 @@ export const contractsApi = {
   },
 
   // Get Extracted Candidate Terms for Document (Phase 2)
+  // Backend returns: { document_id, status, fields: { principal: {value, confidence}, ... }, missing_fields, warnings }
   async getExtractedTerms(documentId: string): Promise<CandidateTerms> {
-    const res = await fetchApi<{ document_id: string; terms: CandidateTerms }>(`/api/v1/documents/${documentId}/terms`);
-    return res.terms;
+    const res = await fetchApi<{
+      document_id: string;
+      status: string;
+      fields: Record<string, { value: string | null; confidence: string; source: string | null }>;
+      missing_fields: string[];
+      warnings: string[];
+    }>(`/api/v1/documents/${documentId}/terms`);
+
+    const f = res.fields;
+    return {
+      principal: f.principal?.value ?? '',
+      currency: f.currency?.value ?? 'INR',
+      annual_interest_rate: f.annual_interest_rate?.value ?? '',
+      payment_frequency: (f.payment_frequency?.value as CandidateTerms['payment_frequency']) ?? 'MONTHLY',
+      start_date: f.start_date?.value ?? '',
+      maturity_date: f.maturity_date?.value ?? '',
+      contract_role: 'RPA' as CandidateTerms['contract_role'],
+      confidence: res.missing_fields.length === 0 ? 0.95 : 0.5,
+    };
   },
 
   // Confirm PDF Terms & Create Validated FinancialContract (Phase 2)
-  async confirmDocument(documentId: string, terms: CandidateTerms): Promise<{ contract: FinancialContract; terms: CandidateTerms }> {
-    return await fetchApi<{ contract: FinancialContract; terms: CandidateTerms }>(`/api/v1/documents/${documentId}/confirm`, {
-      method: 'POST',
-      body: JSON.stringify({ confirmed_terms: terms }),
-    });
+  // Backend DocumentConfirmRequest extends FinancialContractCreate directly (flat fields, no wrapper)
+  // Backend DocumentConfirmResponse returns { document_id, contract_id, status, message } — then fetch contract
+  async confirmDocument(documentId: string, terms: CandidateTerms): Promise<{ contract_id: string }> {
+    const payload = {
+      principal: terms.principal,
+      currency: terms.currency,
+      annual_interest_rate: terms.annual_interest_rate,
+      start_date: terms.start_date,
+      maturity_date: terms.maturity_date,
+      payment_frequency: terms.payment_frequency,
+      contract_role: terms.contract_role,
+    };
+    const res = await fetchApi<{ document_id: string; contract_id: string; status: string; message: string }>(
+      `/api/v1/documents/${documentId}/confirm`,
+      { method: 'POST', body: JSON.stringify(payload) }
+    );
+    return { contract_id: res.contract_id };
   },
 
   // Create Financial Contract (Phase 1)
