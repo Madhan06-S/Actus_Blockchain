@@ -2,8 +2,7 @@
 
 import json
 from pathlib import Path
-import pickle
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 
 MODEL_FILE_LOCATIONS = [
     Path("backend/app/intelligence/risk/actus_risk_model.pkl"),
@@ -27,7 +26,7 @@ class RiskModelAdapter:
 
     @classmethod
     def load_model(cls) -> bool:
-        """Attempt to locate and load trained scikit-learn model and feature_cols.json."""
+        """Attempt to locate and load trained model and feature_cols.json (lazy load)."""
         if cls._model_loaded:
             return cls._model is not None
 
@@ -36,6 +35,7 @@ class RiskModelAdapter:
 
         if model_path and cols_path:
             try:
+                import pickle  # lazy import to avoid watchfiles reload loop
                 with open(model_path, "rb") as f:
                     cls._model = pickle.load(f)
                 with open(cols_path, "r", encoding="utf-8") as f:
