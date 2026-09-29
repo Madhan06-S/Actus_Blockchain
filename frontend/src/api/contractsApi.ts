@@ -16,6 +16,7 @@ import {
   DEMO_RISK_STATUS,
   DEMO_COMPARISON_ITEMS,
   DEMO_HASH_INFO,
+  generateDynamicContractData,
 } from '../mock/demoData';
 
 export const contractsApi = {
@@ -47,66 +48,50 @@ export const contractsApi = {
     const res = await fetchApi<{
       document_id: string;
       status: string;
-      fields?: Record<string, { value: string | null; confidence: string }>;
+      fields?: Record<string, { value: string | null; confidence: string; source?: string | null }>;
       terms?: CandidateTerms;
+      warnings?: string[];
     }>(`/api/v1/documents/${documentId}/terms`);
 
     if (res.fields) {
+      // Backend always returns INR principal (after conversion if needed).
+      const extractedPrincipal = res.fields.principal?.value;
+      const extractedCurrency = res.fields.currency?.value || 'INR';
+
+      // Look for a conversion note in warnings (set by backend CurrencyConverter)
+      const conversionWarning = res.warnings?.find(w => w.startsWith('Currency conversion applied:'));
+      const conversionNote = conversionWarning
+        ? conversionWarning.replace('Currency conversion applied: ', '').split('. All calculations')[0]
+        : undefined;
+
       return {
-        principal: res.fields.principal?.value || '100000',
-        currency: res.fields.currency?.value || 'INR',
+        principal: extractedPrincipal || '100000',
+        currency: extractedCurrency,
         annual_interest_rate: res.fields.annual_interest_rate?.value || '10.0',
         start_date: res.fields.start_date?.value || '2027-01-01',
         maturity_date: res.fields.maturity_date?.value || '2029-01-01',
         payment_frequency: (res.fields.payment_frequency?.value as any) || 'MONTHLY',
         contract_role: 'RPA',
-        confidence: 0.95,
+        confidence: extractedPrincipal ? 0.95 : 0.5,
+        conversionNote,
       };
     }
     if (res.terms) {
       return res.terms;
     }
+
     return DEMO_CANDIDATE_TERMS;
   },
 
   // Confirm PDF Terms & Create Validated FinancialContract (Phase 2)
   async confirmDocument(documentId: string, terms: CandidateTerms): Promise<{ contract: FinancialContract; terms: CandidateTerms }> {
-    const confirmRes = await fetchApi<{
-      document_id: string;
-      contract_id: string;
-      status: string;
-      message: string;
-    }>(`/api/v1/documents/${documentId}/confirm`, {
-      method: 'POST',
-      body: JSON.stringify({
-        principal: parseFloat(terms.principal) || 100000,
-        currency: terms.currency || 'INR',
-        annual_interest_rate: parseFloat(terms.annual_interest_rate) || 10.0,
-        start_date: terms.start_date || '2027-01-01',
-        maturity_date: terms.maturity_date || '2029-01-01',
-        payment_frequency: terms.payment_frequency || 'MONTHLY',
-        contract_role: terms.contract_role || 'RPA',
-        description: `Uploaded contract from document ${documentId.substring(0, 8)}`,
-      }),
-    });
-
-    const createdContract = await this.getContract(confirmRes.contract_id);
-    return { contract: createdContract, terms };
-  },
-
-  // Get Financial Contract by ID (Phase 1)
-  async getContract(contractId: string): Promise<FinancialContract> {
     try {
-      return await fetchApi<FinancialContract>(`/api/v1/contracts/${contractId}`);
-    } catch {
-      return DEMO_FINANCIAL_CONTRACT;
-    }
-  },
-
-  // Create Financial Contract (Phase 1)
-  async createContract(terms: CandidateTerms): Promise<FinancialContract> {
-    try {
-      return await fetchApi<FinancialContract>('/api/v1/contracts/', {
+      const confirmRes = await fetchApi<{
+        document_id: string;
+        contract_id: string;
+        status: string;
+        message: string;
+      }>(`/api/v1/documents/${documentId}/confirm`, {
         method: 'POST',
         body: JSON.stringify({
           principal: parseFloat(terms.principal) || 100000,
@@ -116,11 +101,48 @@ export const contractsApi = {
           maturity_date: terms.maturity_date || '2029-01-01',
           payment_frequency: terms.payment_frequency || 'MONTHLY',
           contract_role: terms.contract_role || 'RPA',
-          description: 'Directly created ACTUS contract',
+          description: `Uploaded contract from document ${documentId.substring(0, 8)}`,
+        }),
+      });
+
+      const createdContract = await this.getContract(confirmRes.contract_id, terms);
+      return { contract: createdContract, terms };
+    } catch {
+      const createdContract = await this.createContract(terms);
+      return { contract: createdContract, terms };
+    }
+  },
+
+  // Get Financial Contract by ID (Phase 1)
+  async getContract(contractId: string, fallbackTerms?: CandidateTerms): Promise<FinancialContract> {
+    try {
+      return await fetchApi<FinancialContract>(`/api/v1/contracts/${contractId}`);
+    } catch {
+      if (fallbackTerms) {
+        return generateDynamicContractData(fallbackTerms, contractId).contract;
+      }
+      return DEMO_FINANCIAL_CONTRACT;
+    }
+  },
+
+  // Create Financial Contract (Phase 1)
+  async createContract(terms: CandidateTerms): Promise<FinancialContract> {
+    try {
+      return await fetchApi<FinancialContract>('/api/v1/contracts', {
+        method: 'POST',
+        body: JSON.stringify({
+          principal: parseFloat(terms.principal) || 100000,
+          currency: terms.currency || 'INR',
+          annual_interest_rate: parseFloat(terms.annual_interest_rate) || 10.0,
+          start_date: terms.start_date || '2027-01-01',
+          maturity_date: terms.maturity_date || '2029-01-01',
+          payment_frequency: terms.payment_frequency || 'MONTHLY',
+          contract_role: terms.contract_role || 'RPA',
+          description: `ACTUS Financial Contract (Principal: ${terms.currency || 'INR'} ${terms.principal})`,
         }),
       });
     } catch {
-      return DEMO_FINANCIAL_CONTRACT;
+      return generateDynamicContractData(terms).contract;
     }
   },
 
@@ -176,22 +198,26 @@ export const contractsApi = {
   // --- FINANCIAL INTELLIGENCE ENDPOINTS ---
 
   // Feature 1: AI Risk Prediction
-  async getRiskAnalysis(contractId: string): Promise<RiskPredictionResponse> {
+  async getRiskAnalysis(contractId: string, contractOrTerms?: FinancialContract | CandidateTerms): Promise<RiskPredictionResponse> {
     try {
       return await fetchApi<RiskPredictionResponse>(`/api/v1/contracts/${contractId}/risk`);
     } catch {
+      const principal = contractOrTerms ? parseFloat(String(contractOrTerms.principal)) || 100000 : 100000;
+      const rate = contractOrTerms ? parseFloat(String(contractOrTerms.annual_interest_rate)) || 10.0 : 10.0;
+      const defaultProb = 0.18;
+      const expectedLoss = Math.round(principal * defaultProb * 100) / 100;
       return {
         contract_id: contractId,
-        default_probability: 0.18,
+        default_probability: defaultProb,
         default_probability_percent: 18.0,
         risk_category: 'MEDIUM',
-        expected_loss: 18000,
+        expected_loss: expectedLoss,
         recommendation: 'APPROVE WITH CONDITIONS',
         model_available: false,
         estimator_type: 'Prototype risk estimator',
         features_used: [
-          { name: 'principal', value: 100000, description: 'Loan principal' },
-          { name: 'annual_interest_rate', value: 10.0, description: 'Annual interest rate (%)' },
+          { name: 'principal', value: principal, description: 'Loan principal' },
+          { name: 'annual_interest_rate', value: rate, description: 'Annual interest rate (%)' },
           { name: 'loan_duration_months', value: 24, description: 'Duration in months' },
           { name: 'expected_payment_count', value: 24, description: 'Scheduled payments' },
           { name: 'overdue_payment_count', value: 0, description: 'Overdue count' },
@@ -224,7 +250,7 @@ export const contractsApi = {
   },
 
   // Feature 3: Scenario Stress Testing
-  async runStressTest(contractId: string, payload: { rate_shock_percent: number; scenario_description?: string }): Promise<StressTestResponse> {
+  async runStressTest(contractId: string, payload: { rate_shock_percent: number; scenario_description?: string }, contractOrTerms?: FinancialContract | CandidateTerms): Promise<StressTestResponse> {
     try {
       return await fetchApi<StressTestResponse>(`/api/v1/contracts/${contractId}/stress-test`, {
         method: 'POST',
@@ -232,19 +258,56 @@ export const contractsApi = {
       });
     } catch {
       const shock = payload.rate_shock_percent;
+      const principal = contractOrTerms ? parseFloat(String(contractOrTerms.principal)) || 100000 : 100000;
+      const baseRate = contractOrTerms ? parseFloat(String(contractOrTerms.annual_interest_rate)) || 10.0 : 10.0;
+      const stressedRate = baseRate + shock;
+
+      const totalMonths = 24;
+      const totalYears = 2.0;
+
+      const baseTotalInterest = (principal * (baseRate / 100.0)) * totalYears;
+      const baseTotalRepayment = principal + baseTotalInterest;
+      const baseMonthly = baseTotalRepayment / totalMonths;
+
+      const stressedTotalInterest = (principal * (stressedRate / 100.0)) * totalYears;
+      const stressedTotalRepayment = principal + stressedTotalInterest;
+      const stressedMonthly = stressedTotalRepayment / totalMonths;
+
+      const addMonthly = stressedMonthly - baseMonthly;
+      const addInterest = stressedTotalInterest - baseTotalInterest;
+      const pctIncrease = baseTotalInterest > 0 ? (addInterest / baseTotalInterest) * 100 : 0;
+
       return {
         contract_id: contractId,
         scenario_description: payload.scenario_description || `Rate shock +${shock}%`,
-        base_case: { annual_interest_rate: 10.0, monthly_payment: 4614.49, total_interest: 10747.84, total_repayment: 110747.84, risk_category: 'MEDIUM' },
-        stressed_case: { annual_interest_rate: 10.0 + shock, monthly_payment: 4754.20, total_interest: 14100.80, total_repayment: 114100.80, risk_category: 'HIGH' },
-        difference: { rate_shock_percent: shock, additional_monthly_payment: 139.71, additional_interest: 3352.96, additional_total_repayment: 3352.96, percentage_increase_in_interest: 31.2 },
+        base_case: {
+          annual_interest_rate: baseRate,
+          monthly_payment: Math.round(baseMonthly * 100) / 100,
+          total_interest: Math.round(baseTotalInterest * 100) / 100,
+          total_repayment: Math.round(baseTotalRepayment * 100) / 100,
+          risk_category: 'MEDIUM',
+        },
+        stressed_case: {
+          annual_interest_rate: stressedRate,
+          monthly_payment: Math.round(stressedMonthly * 100) / 100,
+          total_interest: Math.round(stressedTotalInterest * 100) / 100,
+          total_repayment: Math.round(stressedTotalRepayment * 100) / 100,
+          risk_category: 'HIGH',
+        },
+        difference: {
+          rate_shock_percent: shock,
+          additional_monthly_payment: Math.round(addMonthly * 100) / 100,
+          additional_interest: Math.round(addInterest * 100) / 100,
+          additional_total_repayment: Math.round(addInterest * 100) / 100,
+          percentage_increase_in_interest: Math.round(pctIncrease * 10) / 10,
+        },
         risk_impact: {
           base_risk_category: 'MEDIUM',
           stressed_risk_category: 'HIGH',
           base_default_probability: 0.18,
           stressed_default_probability: 0.27,
           category_shifted: true,
-          summary: `Interest rate increase of +${shock}% increases total interest by ₹3,352.96 (31.2% increase).`,
+          summary: `Interest rate increase of +${shock}% increases total interest by ₹${addInterest.toFixed(2)} (${pctIncrease.toFixed(1)}% increase).`,
         },
       };
     }

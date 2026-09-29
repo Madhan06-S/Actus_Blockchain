@@ -121,6 +121,28 @@ export const DEMO_HASH_INFO = {
   algorithm: "SHA-256",
 };
 
+/** Returns the currency symbol for a given ISO 4217 code. */
+export function getCurrencySymbol(currency: string): string {
+  const map: Record<string, string> = {
+    INR: '₹',
+    USD: '$',
+    EUR: '€',
+    GBP: '£',
+  };
+  return map[currency?.toUpperCase()] ?? currency ?? '₹';
+}
+
+/** Returns a locale-formatted currency string, using Indian grouping for INR. */
+export function formatAmount(amount: number, currency: string): string {
+  const curr = currency?.toUpperCase() || 'INR';
+  const locale = curr === 'INR' ? 'en-IN' : 'en-US';
+  return new Intl.NumberFormat(locale, {
+    style: 'currency',
+    currency: curr,
+    maximumFractionDigits: 2,
+  }).format(amount);
+}
+
 export function generateDynamicContractData(terms: CandidateTerms, contractId: string = "fc-" + Date.now()): {
   contract: FinancialContract;
   statusData: RiskStatusResponse;
@@ -172,6 +194,8 @@ export function generateDynamicContractData(terms: CandidateTerms, contractId: s
     };
   });
 
+  const currency = terms.currency?.toUpperCase() || 'INR';
+
   const statusData: RiskStatusResponse = {
     contract_id: contractId,
     blockchain_contract_address: "0xf99F2d28720AC7019F6b2fb9837a86f3b4901FBE",
@@ -188,7 +212,7 @@ export function generateDynamicContractData(terms: CandidateTerms, contractId: s
     unexpected_payment_count: 0,
     evaluation_date: new Date().toISOString(),
     status_reasons: [
-      `The contract schedule expects ${totalMonths} monthly payments totaling ₹${totalExpected.toLocaleString('en-IN', { maximumFractionDigits: 2 })}.`,
+      `The contract schedule expects ${totalMonths} monthly payments totaling ${formatAmount(totalExpected, currency)}.`,
       `${totalMonths} scheduled payments pending on MST Blockchain.`,
       `ACTUS financial schedule initialized successfully.`
     ],

@@ -5,10 +5,11 @@ import { contractsApi } from '../api/contractsApi';
 
 interface PaymentTimelineProps {
   comparisonItems: ComparisonItem[];
+  currency?: string;
   onPaymentRecorded?: (updatedItems: ComparisonItem[], paidAmount: number, txHash: string) => void;
 }
 
-export const PaymentTimeline: React.FC<PaymentTimelineProps> = ({ comparisonItems, onPaymentRecorded }) => {
+export const PaymentTimeline: React.FC<PaymentTimelineProps> = ({ comparisonItems, currency = 'INR', onPaymentRecorded }) => {
   const [filter, setFilter] = useState<'ALL' | 'RECORDED' | 'UNPAID'>('ALL');
   const [items, setItems] = useState<ComparisonItem[]>(comparisonItems);
   const [payingIndex, setPayingIndex] = useState<number | null>(null);
@@ -22,7 +23,9 @@ export const PaymentTimeline: React.FC<PaymentTimelineProps> = ({ comparisonItem
 
   const formatCurrency = (val: string | number) => {
     const num = typeof val === 'string' ? parseFloat(val) : val;
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(num);
+    const curr = (currency || 'INR').toUpperCase();
+    const locale = curr === 'INR' ? 'en-IN' : 'en-US';
+    return new Intl.NumberFormat(locale, { style: 'currency', currency: curr, maximumFractionDigits: 2 }).format(num);
   };
 
   const formatDate = (dateStr: string) => {
@@ -38,7 +41,7 @@ export const PaymentTimeline: React.FC<PaymentTimelineProps> = ({ comparisonItem
     try {
       setPayingIndex(itemIndex);
       setErrorMsg(null);
-      const amountNum = parseFloat(expectedAmount) || 4614.49;
+      const amountNum = parseFloat(expectedAmount) || 0;
 
       // Real live transaction on MST Blockchain Testnet
       const res = await contractsApi.recordPayment(amountNum);

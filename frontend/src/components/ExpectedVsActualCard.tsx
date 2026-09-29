@@ -4,12 +4,15 @@ import { ArrowRightLeft, FileSpreadsheet, Server } from 'lucide-react';
 
 interface ExpectedVsActualCardProps {
   statusData: RiskStatusResponse;
+  currency?: string;
 }
 
-export const ExpectedVsActualCard: React.FC<ExpectedVsActualCardProps> = ({ statusData }) => {
+export const ExpectedVsActualCard: React.FC<ExpectedVsActualCardProps> = ({ statusData, currency = 'INR' }) => {
   const formatCurrency = (val: string | number) => {
     const num = typeof val === 'string' ? parseFloat(val) : val;
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(num);
+    const curr = currency.toUpperCase();
+    const locale = curr === 'INR' ? 'en-IN' : 'en-US';
+    return new Intl.NumberFormat(locale, { style: 'currency', currency: curr, maximumFractionDigits: 2 }).format(num);
   };
 
   const expectedVal = parseFloat(statusData.total_expected_amount);

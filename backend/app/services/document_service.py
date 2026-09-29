@@ -21,6 +21,7 @@ from app.schemas.document import (
 )
 from app.services.contract_service import ContractService, contract_service
 from app.services.contract_term_extractor import ContractTermExtractor
+from app.services.currency_converter import CurrencyConverter
 from app.services.document_text_extractor import DocumentTextExtractor
 
 MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
@@ -148,7 +149,46 @@ class DocumentService:
             )
 
         text_result = DocumentTextExtractor.extract_text_from_file(doc.file_path)
-        return ContractTermExtractor.extract_terms(text_result.text, document_id)
+        result = ContractTermExtractor.extract_terms(text_result.text, document_id)
+
+        # ── Currency → INR conversion ─────────────────────────────────────────
+        # Whatever currency was detected, convert the principal to INR so that
+        # ACTUS calculations and all downstream pages always work in ₹.
+        currency_field = result.fields.get("currency")
+        principal_field = result.fields.get("principal")
+
+        if currency_field and currency_field.value and currency_field.value.upper() != "INR":
+            orig_currency = currency_field.value.upper()
+            if principal_field and principal_field.value:
+                try:
+                    orig_amount = float(principal_field.value)
+                    inr_amount, rate = CurrencyConverter.to_inr(orig_amount, orig_currency)
+                    note = CurrencyConverter.format_conversion_note(orig_amount, orig_currency, inr_amount, rate)
+
+                    # Overwrite principal with INR equivalent
+                    from app.schemas.document import FieldExtractionResult
+                    from app.models.document import ConfidenceLevel
+                    result.fields["principal"] = FieldExtractionResult(
+                        value=str(int(inr_amount)) if inr_amount == int(inr_amount) else str(round(inr_amount, 2)),
+                        confidence=principal_field.confidence,
+                        source=f"Converted from {note}",
+                    )
+                    # Always set currency to INR after conversion
+                    result.fields["currency"] = FieldExtractionResult(
+                        value="INR",
+                        confidence=currency_field.confidence,
+                        source=f"Auto-converted from {orig_currency}",
+                    )
+                    result.warnings.append(
+                        f"Currency conversion applied: {note}. "
+                        f"All calculations will run in Indian Rupees (INR)."
+                    )
+                except (ValueError, TypeError):
+                    result.warnings.append(
+                        f"Could not convert {orig_currency} principal to INR — using original value."
+                    )
+
+        return result
 
     def confirm_document(
         self, document_id: str, payload: FinancialContractCreate

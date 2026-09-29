@@ -27,6 +27,8 @@ export interface CandidateTerms {
   maturity_date: string;
   contract_role: ContractRole;
   confidence: number;
+  /** Set when a non-INR currency was converted. E.g. "USD 200,000,000 @ ₹84/USD → ₹16,80,00,00,000" */
+  conversionNote?: string;
 }
 
 export interface ActusContract {

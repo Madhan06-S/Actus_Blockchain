@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { CandidateTerms } from '../types/contract';
-import { Edit3, ArrowRight, Info } from 'lucide-react';
+import { Edit3, ArrowRight, Info, RefreshCw } from 'lucide-react';
 
 interface ReviewTermsScreenProps {
   documentId?: string | null;
@@ -21,9 +21,13 @@ export const ReviewTermsScreen: React.FC<ReviewTermsScreenProps> = ({ documentId
     setTerms((prev) => ({ ...prev, [field]: value }));
   };
 
-  const formatCurrency = (val: string) => {
+  const formatCurrency = (val: string, currency?: string) => {
     const num = parseFloat(val);
-    return isNaN(num) ? val : new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(num);
+    if (isNaN(num)) return val;
+    const curr = currency || terms.currency || 'INR';
+    // Use en-IN locale for INR (Indian grouping), en-US for everything else
+    const locale = curr === 'INR' ? 'en-IN' : 'en-US';
+    return new Intl.NumberFormat(locale, { style: 'currency', currency: curr, maximumFractionDigits: 2 }).format(num);
   };
 
   return (
@@ -63,6 +67,36 @@ export const ReviewTermsScreen: React.FC<ReviewTermsScreenProps> = ({ documentId
         )}
       </div>
 
+      {/* CURRENCY CONVERSION BANNER */}
+      {terms.conversionNote && (
+        <div
+          style={{
+            backgroundColor: '#f0fdf4',
+            border: '1px solid #86efac',
+            borderLeft: '4px solid #16a34a',
+            borderRadius: '10px',
+            padding: '0.9rem 1.25rem',
+            marginBottom: '1.5rem',
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '0.75rem',
+          }}
+        >
+          <RefreshCw size={20} color="#16a34a" style={{ marginTop: '2px', flexShrink: 0 }} />
+          <div>
+            <div style={{ fontWeight: 700, color: '#15803d', fontSize: '0.9rem', marginBottom: '0.3rem' }}>
+              ₹ Currency Converted to INR
+            </div>
+            <div style={{ fontSize: '0.85rem', color: '#166534', fontFamily: 'monospace' }}>
+              {terms.conversionNote}
+            </div>
+            <div style={{ fontSize: '0.78rem', color: '#4ade80', marginTop: '0.25rem' }}>
+              All cash flows and payment schedules will be calculated in Indian Rupees (₹ INR).
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1.25rem', marginBottom: '2rem' }}>
         {/* Principal Card */}
         <div className="card" style={{ borderLeft: '4px solid #0284c7' }}>
@@ -78,10 +112,10 @@ export const ReviewTermsScreen: React.FC<ReviewTermsScreenProps> = ({ documentId
             />
           ) : (
             <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#0f172a' }}>
-              {formatCurrency(terms.principal)}
+              {formatCurrency(terms.principal, terms.currency)}
             </div>
           )}
-          <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '0.25rem' }}>Currency: INR</div>
+          <div style={{ fontSize: '0.78rem', color: '#94a3b8', marginTop: '0.25rem' }}>Currency: {terms.currency || 'INR'}</div>
         </div>
 
         {/* Interest Rate Card */}

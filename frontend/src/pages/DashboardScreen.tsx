@@ -35,9 +35,12 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   setActiveTab,
   onPaymentRecorded,
 }) => {
-  const formatCurrency = (val: string) => {
-    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(parseFloat(val));
+  const formatCurrency = (val: string, currency?: string) => {
+    const curr = (currency || contract.currency || 'INR').toUpperCase();
+    const locale = curr === 'INR' ? 'en-IN' : 'en-US';
+    return new Intl.NumberFormat(locale, { style: 'currency', currency: curr, maximumFractionDigits: 2 }).format(parseFloat(val));
   };
+  const contractCurrency = contract.currency?.toUpperCase() || 'INR';
 
   return (
     <div style={{ padding: '2rem 2.5rem', display: 'flex', flexDirection: 'column', gap: '2rem' }} className="animate-fade-in">
@@ -65,10 +68,10 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
               FINANCIAL CONTRACT SUMMARY
             </div>
             <h2 style={{ fontSize: '1.4rem', fontWeight: 700, color: '#0f172a', margin: 0 }}>
-              Annuity Loan ({formatCurrency(contract.principal)})
+              {contract.description && !contract.description.includes('(') ? contract.description : 'Annuity Loan'} ({formatCurrency(String(contract.principal), contractCurrency)})
             </h2>
             <div style={{ fontSize: '0.85rem', color: '#475569', marginTop: '0.15rem' }}>
-              10% annual interest • Monthly payments • {contract.start_date} → {contract.maturity_date}
+              {contract.annual_interest_rate}% annual interest • {contract.payment_frequency?.replace('_', '-').toLowerCase() || 'monthly'} payments • {contract.start_date} → {contract.maturity_date}
             </div>
           </div>
         </div>
@@ -129,9 +132,9 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
               </div>
               <p style={{ fontSize: '0.92rem', color: '#334155', margin: 0, lineHeight: 1.5 }}>
                 The contract schedule expects <strong>{statusData.total_expected_payments} monthly payments</strong> totaling{' '}
-                <strong>₹{parseFloat(statusData.total_expected_amount).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>. The recorded activity on MST Blockchain contains{' '}
+                <strong>{formatCurrency(statusData.total_expected_amount, contractCurrency)}</strong>. The recorded activity on MST Blockchain contains{' '}
                 <strong>{statusData.matched_payment_count} payments</strong> totaling{' '}
-                <strong>₹{parseFloat(statusData.total_actual_paid).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</strong>.
+                <strong>{formatCurrency(statusData.total_actual_paid, contractCurrency)}</strong>.
               </p>
 
               <div style={{ fontSize: '0.88rem', color: '#e11d48', fontWeight: 600, marginTop: '0.25rem' }}>
@@ -141,7 +144,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
           </div>
 
           {/* EXPECTED VS ACTUAL CARD */}
-          <ExpectedVsActualCard statusData={statusData} />
+          <ExpectedVsActualCard statusData={statusData} currency={contractCurrency} />
 
           {/* AI RISK ANALYSIS CARD */}
           <AIRiskCard riskData={riskData} onViewDetails={() => setActiveTab('risk')} />
@@ -150,7 +153,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
 
       {/* SCHEDULE & TIMELINE TAB */}
       {(activeTab === 'overview' || activeTab === 'schedule') && (
-        <PaymentTimeline comparisonItems={comparisonItems} onPaymentRecorded={onPaymentRecorded} />
+        <PaymentTimeline comparisonItems={comparisonItems} currency={contractCurrency} onPaymentRecorded={onPaymentRecorded} />
       )}
 
       {/* RECORDED ACTIVITY TAB */}
@@ -161,7 +164,11 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
             blockchainStatus={statusData.blockchain_status || 'ACTIVE'}
             paymentCount={statusData.matched_payment_count}
           />
-          <ContractRulesCard />
+          <ContractRulesCard
+            contractType={contract.description && !contract.description.includes('(') ? contract.description : 'Annuity (ANN)'}
+            paymentFrequency={contract.payment_frequency?.replace('_', ' ') || 'Monthly'}
+            expectedEventCount={statusData.total_expected_payments || comparisonItems.length}
+          />
         </div>
       )}
 

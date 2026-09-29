@@ -18,7 +18,7 @@ export const StressTestScreen: React.FC<StressTestScreenProps> = ({ contract }) 
       const res = await contractsApi.runStressTest(contract.contract_id, {
         rate_shock_percent: shockVal,
         scenario_description: `Interest rate increase of +${shockVal.toFixed(1)}%`,
-      });
+      }, contract);
       setStressData(res);
     } catch (err) {
       console.warn('Stress test API fallback:', err);

@@ -71,6 +71,19 @@ export const App: React.FC = () => {
       } else {
         createdContract = await contractsApi.createContract(terms);
       }
+
+      // Guarantee createdContract has the confirmed terms (principal, currency, etc.)
+      if (terms.principal) {
+        createdContract = {
+          ...createdContract,
+          principal: terms.principal,
+          currency: terms.currency || createdContract.currency,
+          annual_interest_rate: terms.annual_interest_rate || createdContract.annual_interest_rate,
+          start_date: terms.start_date || createdContract.start_date,
+          maturity_date: terms.maturity_date || createdContract.maturity_date,
+          payment_frequency: terms.payment_frequency || createdContract.payment_frequency,
+        };
+      }
       setContract(createdContract);
 
       const statusRes = await contractsApi.getStatus(createdContract.contract_id);
@@ -89,9 +102,9 @@ export const App: React.FC = () => {
         setComparisonItems(dynamicData.comparisonItems);
       }
 
-      // Fetch AI Risk Prediction automatically (non-blocking fallback)
+      // Fetch AI Risk Prediction automatically (non-blocking fallback with contract context)
       try {
-        const riskRes = await contractsApi.getRiskAnalysis(createdContract.contract_id);
+        const riskRes = await contractsApi.getRiskAnalysis(createdContract.contract_id, createdContract);
         setRiskData(riskRes);
       } catch (rErr) {
         console.warn('AI Risk analysis fetch fallback:', rErr);
@@ -102,6 +115,12 @@ export const App: React.FC = () => {
       setContract(dynamicData.contract);
       setStatusData(dynamicData.statusData);
       setComparisonItems(dynamicData.comparisonItems);
+      try {
+        const riskRes = await contractsApi.getRiskAnalysis(dynamicData.contract.contract_id, dynamicData.contract);
+        setRiskData(riskRes);
+      } catch {
+        // ignore
+      }
     }
     setStage('dashboard');
   };

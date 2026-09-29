@@ -30,6 +30,19 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# Storage
-storage/
+# Node / Frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
 
+# Database & Logs
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# Storage & Temporary
+storage/
+tmp/
+.gemini/

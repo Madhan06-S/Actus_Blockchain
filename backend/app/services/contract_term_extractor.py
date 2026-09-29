@@ -39,6 +39,42 @@ def normalize_date_string(date_str: str) -> Optional[str]:
     return None
 
 
+# Multiplier words for large number expansion (e.g. "200 million" -> 200_000_000)
+_WORD_MULTIPLIERS = {
+    "hundred": 100,
+    "thousand": 1_000,
+    "lakh": 1_00_000,
+    "lac": 1_00_000,
+    "million": 1_000_000,
+    "crore": 1_00_00_000,
+    "billion": 1_000_000_000,
+}
+
+
+def _expand_word_amount(text: str) -> Optional[float]:
+    """
+    Try to parse a human-readable amount like '200 million', '1.5 crore', '2,00,000'.
+    Returns float or None.
+    """
+    text = text.strip().lower()
+    # Remove commas (Indian / international formatting)
+    text_no_comma = text.replace(",", "")
+    # Try plain numeric first
+    try:
+        return float(text_no_comma)
+    except ValueError:
+        pass
+
+    # Try "<number> <multiplier>"
+    m = re.match(r"([\d,]+(?:\.\d+)?)\s+(" + "|".join(_WORD_MULTIPLIERS.keys()) + r")", text)
+    if m:
+        base = float(m.group(1).replace(",", ""))
+        mult = _WORD_MULTIPLIERS[m.group(2)]
+        return base * mult
+
+    return None
+
+
 class ContractTermExtractor:
     """Rule-based extractor for candidate financial terms from document text."""
 
@@ -75,7 +111,7 @@ class ContractTermExtractor:
                 warnings=warnings,
             )
 
-        # 1. Currency Extraction
+        # 1. Currency Extraction  — must run BEFORE principal so we can cross-check
         curr_val, curr_conf, curr_src = cls._extract_currency(text)
         if curr_val:
             fields["currency"] = FieldExtractionResult(value=curr_val, confidence=curr_conf, source=curr_src)
@@ -83,8 +119,9 @@ class ContractTermExtractor:
             fields["currency"] = FieldExtractionResult(value=None, confidence=ConfidenceLevel.NOT_FOUND, source=None)
             missing_fields.append("currency")
 
-        # 2. Principal Extraction
-        p_val, p_conf, p_src = cls._extract_principal(text)
+        # 2. Principal Extraction — use detected currency to guide extraction
+        detected_currency = curr_val  # may be None
+        p_val, p_conf, p_src = cls._extract_principal(text, detected_currency)
         if p_val:
             fields["principal"] = FieldExtractionResult(value=p_val, confidence=p_conf, source=p_src)
         else:
@@ -134,49 +171,134 @@ class ContractTermExtractor:
             warnings=warnings,
         )
 
+    # ------------------------------------------------------------------
+    # Currency detection — ordered to avoid false-positive INR when USD
+    # text is dominant.
+    # ------------------------------------------------------------------
     @staticmethod
     def _extract_currency(text: str) -> Tuple[Optional[str], ConfidenceLevel, Optional[str]]:
-        if "₹" in text or re.search(r"\b(?:INR|Rs\.?)\b", text, re.IGNORECASE):
-            return "INR", ConfidenceLevel.HIGH, "INR"
-        if "$" in text or re.search(r"\bUSD\b", text, re.IGNORECASE):
-            return "USD", ConfidenceLevel.HIGH, "USD"
-        if "€" in text or re.search(r"\bEUR\b", text, re.IGNORECASE):
-            return "EUR", ConfidenceLevel.HIGH, "EUR"
-        if "£" in text or re.search(r"\bGBP\b", text, re.IGNORECASE):
-            return "GBP", ConfidenceLevel.HIGH, "GBP"
+        """
+        Detect the *dominant* currency in the document text.
+        We score each currency by the number of occurrences and pick the winner.
+        This prevents a single stray "INR" mention from masking a USD contract.
+        """
+        scores: Dict[str, int] = {"INR": 0, "USD": 0, "EUR": 0, "GBP": 0}
+
+        # INR markers
+        scores["INR"] += len(re.findall(r"₹", text))
+        scores["INR"] += len(re.findall(r"\b(?:INR|Rs\.?|Rupees?)\b", text, re.IGNORECASE))
+
+        # USD markers
+        scores["USD"] += len(re.findall(r"\$", text))
+        scores["USD"] += len(re.findall(r"\bUSD\b", text, re.IGNORECASE))
+        scores["USD"] += len(re.findall(r"\bUS\s+Dollars?\b", text, re.IGNORECASE))
+
+        # EUR markers
+        scores["EUR"] += len(re.findall(r"€", text))
+        scores["EUR"] += len(re.findall(r"\bEUR\b", text, re.IGNORECASE))
+        scores["EUR"] += len(re.findall(r"\bEuros?\b", text, re.IGNORECASE))
+
+        # GBP markers
+        scores["GBP"] += len(re.findall(r"£", text))
+        scores["GBP"] += len(re.findall(r"\bGBP\b", text, re.IGNORECASE))
+        scores["GBP"] += len(re.findall(r"\bPounds?\b", text, re.IGNORECASE))
+
+        # Pick the currency with the highest score
+        best = max(scores, key=lambda k: scores[k])
+        if scores[best] > 0:
+            conf = ConfidenceLevel.HIGH if scores[best] >= 2 else ConfidenceLevel.MEDIUM
+            return best, conf, best
         return None, ConfidenceLevel.NOT_FOUND, None
 
+    # ------------------------------------------------------------------
+    # Principal extraction — handles large numbers & word multipliers
+    # ------------------------------------------------------------------
     @staticmethod
-    def _extract_principal(text: str) -> Tuple[Optional[str], ConfidenceLevel, Optional[str]]:
-        # Pattern 1: "Principal amount: ₹100,000", "loan amount of INR 100,000", "loan of 2,00,000"
-        pattern1 = r"(?:principal(?:\s+amount|\s+sum)?|loan\s+amount(?:\s+of)?|loan\s+of|sum\s+of|total\s+loan)\s*:?\s*[^\d\s]*\s*([\d,]+(?:\.\d+)?)"
-        match = re.search(pattern1, text, re.IGNORECASE)
-        if match:
-            raw_val = match.group(1).replace(",", "")
-            return raw_val, ConfidenceLevel.HIGH, match.group(0)
+    def _extract_principal(text: str, currency: Optional[str] = None) -> Tuple[Optional[str], ConfidenceLevel, Optional[str]]:
+        """
+        Extract the loan/contract principal amount.
+        Handles:
+          - Standard numeric: ₹1,00,000 / $200,000,000 / INR 50000
+          - Word multipliers: USD 200 million / 1.5 crore
+          - Labelled patterns: principal amount, loan amount, Section 2.01, etc.
+        """
 
-        # Pattern 2: "INR 100,000", "₹100,000", "Rs. 200000", "Rs 50,000"
-        pattern2 = r"(?:INR|USD|EUR|GBP|₹|Rs\.?|\$|€|£)\s*([\d,]+(?:\.\d+)?)"
-        match2 = re.search(pattern2, text, re.IGNORECASE)
-        if match2:
-            raw_val = match2.group(1).replace(",", "")
-            return raw_val, ConfidenceLevel.MEDIUM, match2.group(0)
+        # Build a generic currency symbol pattern depending on detected currency
+        _sym = {
+            "INR": r"(?:INR|₹|Rs\.?|Rupees?)",
+            "USD": r"(?:USD|\$|US\s+Dollars?)",
+            "EUR": r"(?:EUR|€|Euros?)",
+            "GBP": r"(?:GBP|£|Pounds?)",
+        }
+        sym_pat = _sym.get(currency or "", r"(?:INR|USD|EUR|GBP|₹|Rs\.?|\$|€|£)")
 
-        # Pattern 3: "100000 INR", "50000 Rupees"
-        pattern3 = r"([\d,]+(?:\.\d+)?)\s*(?:INR|USD|EUR|GBP|Rupees|rs\.?)"
-        match3 = re.search(pattern3, text, re.IGNORECASE)
-        if match3:
-            raw_val = match3.group(1).replace(",", "")
-            return raw_val, ConfidenceLevel.MEDIUM, match3.group(0)
+        candidates: List[Tuple[float, str, ConfidenceLevel]] = []
 
-        # Pattern 4: Amount / Value
-        pattern4 = r"(?:amount|value|borrowed)\s*:?\s*[^\d\s]*\s*([\d,]+(?:\.\d+)?)"
-        match4 = re.search(pattern4, text, re.IGNORECASE)
-        if match4:
-            raw_val = match4.group(1).replace(",", "")
-            return raw_val, ConfidenceLevel.MEDIUM, match4.group(0)
+        def _add(raw_text: str, label: str, conf: ConfidenceLevel) -> None:
+            val = _expand_word_amount(raw_text)
+            if val is not None and val > 0:
+                candidates.append((val, label, conf))
 
-        return None, ConfidenceLevel.NOT_FOUND, None
+        # ---- Pattern 1: labelled principal/loan amount with optional currency symbol ----
+        # e.g. "Principal Amount: $200,000,000" / "loan amount of USD 200 million"
+        p1 = re.compile(
+            r"(?:principal(?:\s+amount)?|loan\s+amount(?:\s+of)?|loan\s+of|sum\s+of|total\s+loan|amount\s+of\s+loan)"
+            r"[\s\S]{0,40}?"               # allow up to 40 chars of non-greedy filler (Article refs etc)
+            r"(?:" + sym_pat + r")?\s*"
+            r"([\d,]+(?:\.\d+)?)"
+            r"(?:\s+(" + "|".join(_WORD_MULTIPLIERS.keys()) + r"))?",
+            re.IGNORECASE
+        )
+        for m in p1.finditer(text):
+            raw = m.group(1)
+            multiplier_word = m.group(2) or ""
+            full = raw + (" " + multiplier_word if multiplier_word else "")
+            _add(full, m.group(0)[:80], ConfidenceLevel.HIGH)
+
+        # ---- Pattern 2: currency-prefixed number (with optional word multiplier) ----
+        # e.g. "$200,000,000" / "USD 200 million" / "₹1,00,000"
+        p2 = re.compile(
+            sym_pat + r"\s*([\d,]+(?:\.\d+)?)"
+            r"(?:\s+(" + "|".join(_WORD_MULTIPLIERS.keys()) + r"))?",
+            re.IGNORECASE
+        )
+        for m in p2.finditer(text):
+            raw = m.group(1)
+            multiplier_word = m.group(2) or ""
+            full = raw + (" " + multiplier_word if multiplier_word else "")
+            _add(full, m.group(0)[:60], ConfidenceLevel.MEDIUM)
+
+        # ---- Pattern 3: number-suffixed currency ----
+        # e.g. "200000 USD" / "50000 Rupees"
+        p3 = re.compile(
+            r"([\d,]+(?:\.\d+)?)\s*" + sym_pat,
+            re.IGNORECASE
+        )
+        for m in p3.finditer(text):
+            _add(m.group(1), m.group(0)[:60], ConfidenceLevel.MEDIUM)
+
+        # ---- Pattern 4: "amount / value / borrowed" label ----
+        p4 = re.compile(
+            r"(?:amount|value|borrowed)\s*:?\s*[^\d\s]*\s*([\d,]+(?:\.\d+)?)",
+            re.IGNORECASE
+        )
+        for m in p4.finditer(text):
+            _add(m.group(1), m.group(0)[:60], ConfidenceLevel.MEDIUM)
+
+        if not candidates:
+            return None, ConfidenceLevel.NOT_FOUND, None
+
+        # Prefer HIGH confidence; among same confidence take the largest amount
+        high = [(v, s, c) for (v, s, c) in candidates if c == ConfidenceLevel.HIGH]
+        if high:
+            best = max(high, key=lambda x: x[0])
+        else:
+            best = max(candidates, key=lambda x: x[0])
+
+        # Return as integer string when there's no fractional part (100000.0 → "100000")
+        val = best[0]
+        val_str = str(int(val)) if val == int(val) else str(val)
+        return val_str, best[2], best[1]
 
     @staticmethod
     def _extract_interest_rate(text: str) -> Tuple[Optional[str], ConfidenceLevel, Optional[str]]:
@@ -186,11 +308,17 @@ class ContractTermExtractor:
         if match:
             return match.group(1), ConfidenceLevel.HIGH, match.group(0)
 
-        # Pattern 2: "10% per annum", "10 percent annual interest", "10% annual interest", "@ 12%"
+        # Pattern 2: "10% per annum", "10 percent annual interest", "@ 12%"
         pattern2 = r"(?:@\s*)?([\d.]+)\s*(?:%|percent)\s*(?:per\s+annum|annual|p\.a\.)?(?:\s+interest)?"
         match2 = re.search(pattern2, text, re.IGNORECASE)
         if match2:
             return match2.group(1), ConfidenceLevel.HIGH, match2.group(0)
+
+        # Pattern 3: front-end fee / service charge (fallback)
+        pattern3 = r"(?:front[- ]end\s+fee|service\s+charge|commitment\s+fee)\s*:?\s*([\d.]+)\s*(?:%|percent)"
+        match3 = re.search(pattern3, text, re.IGNORECASE)
+        if match3:
+            return match3.group(1), ConfidenceLevel.MEDIUM, match3.group(0)
 
         return None, ConfidenceLevel.NOT_FOUND, None
 
@@ -238,11 +366,17 @@ class ContractTermExtractor:
 
     @staticmethod
     def _extract_payment_frequency(text: str) -> Tuple[Optional[str], ConfidenceLevel, Optional[str]]:
-        if re.search(r"\bmonthly\b|payments?\s+shall\s+be\s+made\s+monthly|paid\s+monthly", text, re.IGNORECASE):
-            return "MONTHLY", ConfidenceLevel.HIGH, "monthly"
-        if re.search(r"\bquarterly\b|paid\s+quarterly", text, re.IGNORECASE):
-            return "QUARTERLY", ConfidenceLevel.HIGH, "quarterly"
-        if re.search(r"\bannually\b|\byearly\b|paid\s+annually", text, re.IGNORECASE):
-            return "ANNUALLY", ConfidenceLevel.HIGH, "annually"
-        return "MONTHLY", ConfidenceLevel.MEDIUM, "default monthly"
+        # Semi-annual / bi-annual
+        if re.search(r"\b(?:semi[- ]?annual|bi[- ]?annual|half[- ]?year(?:ly)?|semiannual)\b", text, re.IGNORECASE):
+            return "SEMI_ANNUAL", ConfidenceLevel.HIGH, "SEMI_ANNUAL"
 
+        if re.search(r"\b(?:monthly|per\s+month|each\s+month)\b", text, re.IGNORECASE):
+            return "MONTHLY", ConfidenceLevel.HIGH, "MONTHLY"
+
+        if re.search(r"\b(?:quarterly|per\s+quarter|every\s+3\s+months?)\b", text, re.IGNORECASE):
+            return "QUARTERLY", ConfidenceLevel.HIGH, "QUARTERLY"
+
+        if re.search(r"\b(?:annual(?:ly)?|per\s+year|yearly|once\s+a\s+year)\b", text, re.IGNORECASE):
+            return "ANNUAL", ConfidenceLevel.MEDIUM, "ANNUAL"
+
+        return None, ConfidenceLevel.NOT_FOUND, None
