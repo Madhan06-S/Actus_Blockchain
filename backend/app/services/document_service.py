@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 import os
 from pathlib import Path
+import threading
 from typing import Dict, List, Optional
 import uuid
 
@@ -36,6 +37,7 @@ class DocumentService:
     ) -> None:
         self.repository = repository
         self.contract_service = contract_svc
+        self._lock = threading.Lock()
         # Ensure local storage directory exists
         STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -52,8 +54,8 @@ class DocumentService:
                 detail="Invalid file extension. Only .pdf files are accepted.",
             )
 
-        # Read file contents
-        content = file.file.read()
+        # Read at most MAX_FILE_SIZE_BYTES + 1 bytes to prevent reading arbitrarily large files into memory
+        content = file.file.read(MAX_FILE_SIZE_BYTES + 1)
         file_size = len(content)
 
         if file_size == 0:
@@ -156,26 +158,39 @@ class DocumentService:
         Reuses Phase 1 ContractService validation. Links document_id to contract_id.
         Raises HTTP 400 if document has already been confirmed.
         """
-        doc = self.repository.get_by_id(document_id)
-        if not doc:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Document with ID '{document_id}' not found.",
-            )
+        with self._lock:
+            doc = self.repository.get_by_id(document_id)
+            if not doc:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Document with ID '{document_id}' not found.",
+                )
 
-        if doc.status == DocumentStatus.CONFIRMED:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Document with ID '{document_id}' has already been confirmed and linked to contract '{doc.contract_id}'.",
-            )
+            if doc.status == DocumentStatus.CONFIRMED:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Document with ID '{document_id}' has already been confirmed and linked to contract '{doc.contract_id}'.",
+                )
 
-        # Delegate validation and contract creation to Phase 1 ContractService
-        contract_resp = self.contract_service.create_contract(payload)
+            previous_status = doc.status
+            # Reserve confirmation state to prevent concurrent double creation
+            doc.status = DocumentStatus.CONFIRMED
+            self.repository.save(doc)
 
-        # Update document metadata with linked contract_id and CONFIRMED status
-        doc.contract_id = contract_resp.contract_id
-        doc.status = DocumentStatus.CONFIRMED
-        self.repository.save(doc)
+        try:
+            # Delegate validation and contract creation to Phase 1 ContractService
+            contract_resp = self.contract_service.create_contract(payload)
+        except Exception:
+            with self._lock:
+                doc.status = previous_status
+                doc.contract_id = None
+                self.repository.save(doc)
+            raise
+
+        with self._lock:
+            doc.contract_id = contract_resp.contract_id
+            doc.status = DocumentStatus.CONFIRMED
+            self.repository.save(doc)
 
         return DocumentConfirmResponse(
             document_id=document_id,

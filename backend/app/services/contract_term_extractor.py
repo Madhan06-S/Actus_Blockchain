@@ -11,6 +11,16 @@ from app.schemas.document import ExtractedTermsResponse, FieldExtractionResult
 def normalize_date_string(date_str: str) -> Optional[str]:
     """Parse date strings like 'January 1, 2027' or '2027-01-01' into 'YYYY-MM-DD'."""
     cleaned = date_str.strip()
+
+    # Check for date format ambiguity between %m/%d/%Y and %d/%m/%Y
+    try:
+        dt_m = datetime.strptime(cleaned, "%m/%d/%Y")
+        dt_d = datetime.strptime(cleaned, "%d/%m/%Y")
+        if dt_m.date() != dt_d.date():
+            return None
+    except ValueError:
+        pass
+
     formats = [
         "%B %d, %Y",     # January 1, 2027
         "%B %d %Y",      # January 1 2027
@@ -126,7 +136,7 @@ class ContractTermExtractor:
 
     @staticmethod
     def _extract_currency(text: str) -> Tuple[Optional[str], ConfidenceLevel, Optional[str]]:
-        if "₹" in text or "\u25a0" in text or re.search(r"\b(?:INR|Rs\.?)\b", text, re.IGNORECASE):
+        if "₹" in text or re.search(r"\b(?:INR|Rs\.?)\b", text, re.IGNORECASE):
             return "INR", ConfidenceLevel.HIGH, "INR"
         if "$" in text or re.search(r"\bUSD\b", text, re.IGNORECASE):
             return "USD", ConfidenceLevel.HIGH, "USD"

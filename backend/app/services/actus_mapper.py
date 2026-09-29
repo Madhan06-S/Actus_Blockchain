@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 from decimal import Decimal
+import re
 from typing import List, Optional, Tuple
 
 from app.models.actus import ActusContract, ActusMappingRecord, ActusMappingStatus
@@ -118,14 +119,44 @@ class ActusMapper:
         """Determine ACTUS contractType based on explicit contractual information."""
         desc = (contract.description or "").lower()
 
-        if any(term in desc for term in ["annuity", "amortizing loan", "fixed periodic total", "fixed-rate amortizing"]):
-            return "ANN", None
+        # Guard for negative-amortization wording
+        negative_patterns = [
+            r"\bnon[- ]amortiz(?:ing|ed)\b",
+            r"\bnegativ(?:e|ely)[- ]amortiz(?:ation|ing)\b",
+            r"\bnon[- ]amortised\b",
+        ]
+        if any(re.search(pat, desc, re.IGNORECASE) for pat in negative_patterns):
+            return None, "Repayment structure is insufficient to determine ACTUS contractType without human review."
 
-        if any(term in desc for term in ["bullet", "principal at maturity", "interest-only", "pam"]):
+        # Specific LAM terms (check before ANN)
+        lam_patterns = [
+            r"\blinear amortiz(?:ing|ed)\b",
+            r"\blinear principal\b",
+            r"\blam\b",
+        ]
+        if any(re.search(pat, desc, re.IGNORECASE) for pat in lam_patterns):
+            return "LAM", None
+
+        # PAM terms
+        pam_patterns = [
+            r"\bbullet\b",
+            r"\bprincipal at maturity\b",
+            r"\binterest[- ]only\b",
+            r"\bpam\b",
+        ]
+        if any(re.search(pat, desc, re.IGNORECASE) for pat in pam_patterns):
             return "PAM", None
 
-        if any(term in desc for term in ["linear amortizing", "linear principal", "lam"]):
-            return "LAM", None
+        # ANN terms
+        ann_patterns = [
+            r"\bannuity\b",
+            r"\bamortiz(?:ing|ed)\s+loan\b",
+            r"\bfixed periodic total\b",
+            r"\bfixed[- ]rate amortiz(?:ing|ed)\b",
+            r"\bann\b",
+        ]
+        if any(re.search(pat, desc, re.IGNORECASE) for pat in ann_patterns):
+            return "ANN", None
 
         # If repayment structure is ambiguous/unspecified, DO NOT guess
         return None, "Repayment structure is insufficient to determine ACTUS contractType without human review."

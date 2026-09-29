@@ -202,7 +202,7 @@ def test_9_term_extraction_standard() -> None:
 def test_10_term_extraction_various_text_formats() -> None:
     """Test 10: Extract terms using alternative text formatting."""
     lines = [
-        "Loan amount of ₹100,000",
+        "Loan amount of Rs. 100,000",
         "10 percent annual interest",
         "Commencement date: 2027-01-01",
         "Maturity date: 2029-01-01",
