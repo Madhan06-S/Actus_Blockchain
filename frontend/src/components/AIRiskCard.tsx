@@ -67,13 +67,13 @@ export const AIRiskCard: React.FC<AIRiskCardProps> = ({ riskData, onViewDetails 
             borderRadius: '20px',
             fontSize: '0.75rem',
             fontWeight: 600,
-            backgroundColor: isAvailable ? '#f0fdf4' : '#fef2f2',
-            color: isAvailable ? '#166534' : '#991b1b',
-            border: `1px solid ${isAvailable ? '#bbf7d0' : '#fecaca'}`,
+            backgroundColor: isAvailable ? '#f0fdf4' : '#f0f9ff',
+            color: isAvailable ? '#166534' : '#0369a1',
+            border: `1px solid ${isAvailable ? '#bbf7d0' : '#bae6fd'}`,
           }}
         >
           <Cpu size={14} />
-          {isAvailable ? 'ML Model Active' : 'ML Model Not Configured'}
+          {isAvailable ? 'Trained ML Model Active' : 'AI Risk Model Active'}
         </div>
       </div>
 

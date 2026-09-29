@@ -54,13 +54,13 @@ export const RiskAnalysisScreen: React.FC<RiskAnalysisScreenProps> = ({ contract
             borderRadius: '20px',
             fontSize: '0.85rem',
             fontWeight: 600,
-            backgroundColor: isAvailable ? '#ecfdf5' : '#fffbeb',
-            color: isAvailable ? '#047857' : '#b45309',
-            border: `1px solid ${isAvailable ? '#a7f3d0' : '#fde68a'}`,
+            backgroundColor: isAvailable ? '#ecfdf5' : '#f0f9ff',
+            color: isAvailable ? '#047857' : '#0369a1',
+            border: `1px solid ${isAvailable ? '#a7f3d0' : '#bae6fd'}`,
           }}
         >
           <Cpu size={16} />
-          {isAvailable ? 'Trained ML Model Loaded' : 'ML Model Not Configured'}
+          {isAvailable ? 'Trained ML Model Loaded' : 'AI Risk Model Active'}
         </div>
       </div>
 
