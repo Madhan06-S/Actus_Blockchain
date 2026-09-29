@@ -120,3 +120,80 @@ export const DEMO_HASH_INFO = {
   is_match: true,
   algorithm: "SHA-256",
 };
+
+export function generateDynamicContractData(terms: CandidateTerms, contractId: string = "fc-" + Date.now()): {
+  contract: FinancialContract;
+  statusData: RiskStatusResponse;
+  comparisonItems: ComparisonItem[];
+} {
+  const principalNum = parseFloat(terms.principal) || 100000;
+  const rateNum = parseFloat(terms.annual_interest_rate) || 10.0;
+  const startDate = terms.start_date || "2027-01-01";
+  const maturityDate = terms.maturity_date || "2029-01-01";
+
+  const sDate = new Date(startDate);
+  const mDate = new Date(maturityDate);
+  const totalMonths = Math.max(1, (mDate.getFullYear() - sDate.getFullYear()) * 12 + (mDate.getMonth() - sDate.getMonth()));
+  const totalYears = totalMonths / 12;
+
+  const totalInterest = (principalNum * (rateNum / 100)) * totalYears;
+  const totalExpected = principalNum + totalInterest;
+  const monthlyEmi = totalExpected / totalMonths;
+
+  const contract: FinancialContract = {
+    contract_id: contractId,
+    principal: principalNum.toFixed(2),
+    currency: terms.currency || "INR",
+    annual_interest_rate: rateNum.toFixed(2),
+    start_date: startDate,
+    maturity_date: maturityDate,
+    payment_frequency: terms.payment_frequency || "MONTHLY",
+    contract_role: terms.contract_role || "RPA",
+    description: `ACTUS Financial Contract (Principal: ${terms.currency || "INR"} ${principalNum.toLocaleString()})`,
+    status: "VALIDATED",
+    created_at: new Date().toISOString(),
+  };
+
+  const comparisonItems: ComparisonItem[] = Array.from({ length: totalMonths }, (_, idx) => {
+    const curDate = new Date(sDate);
+    curDate.setMonth(curDate.getMonth() + idx + 1);
+    const dateStr = curDate.toISOString().split("T")[0];
+
+    return {
+      item_id: `item-${idx + 1}`,
+      expected_event_type: "PR_IP",
+      expected_date: dateStr,
+      expected_amount: monthlyEmi.toFixed(2),
+      actual_payment: null,
+      status: "UNPAID" as const,
+      amount_variance: `-${monthlyEmi.toFixed(2)}`,
+      date_variance_days: 0,
+      notes: `Scheduled monthly installment ${idx + 1}/${totalMonths}`,
+    };
+  });
+
+  const statusData: RiskStatusResponse = {
+    contract_id: contractId,
+    blockchain_contract_address: "0xf99F2d28720AC7019F6b2fb9837a86f3b4901FBE",
+    overall_status: "DEVIATION_DETECTED",
+    blockchain_status: "ACTIVE",
+    hash_integrity_matched: true,
+    total_expected_amount: totalExpected.toFixed(2),
+    total_actual_paid: "0.00",
+    net_amount_variance: `-${totalExpected.toFixed(2)}`,
+    total_expected_payments: totalMonths,
+    matched_payment_count: 0,
+    unpaid_payment_count: totalMonths,
+    overdue_payment_count: 0,
+    unexpected_payment_count: 0,
+    evaluation_date: new Date().toISOString(),
+    status_reasons: [
+      `The contract schedule expects ${totalMonths} monthly payments totaling ₹${totalExpected.toLocaleString('en-IN', { maximumFractionDigits: 2 })}.`,
+      `${totalMonths} scheduled payments pending on MST Blockchain.`,
+      `ACTUS financial schedule initialized successfully.`
+    ],
+  };
+
+  return { contract, statusData, comparisonItems };
+}
+

@@ -101,18 +101,33 @@ class BlockchainService:
     def verify_onchain_hash(self, contract_id: str) -> HashVerificationResult:
         """Compare Phase 6 off-chain SHA-256 hash with live on-chain actusHash."""
         # 1. Fetch link
-        link = self.get_link(contract_id)
+        link = self.link_repository.get_by_contract_id(contract_id)
+        if not link and settings.MST_CONTRACT_ADDRESS:
+            try:
+                link = self.link_contract(contract_id, settings.MST_CONTRACT_ADDRESS)
+            except Exception:
+                pass
+        if not link:
+            link = self.get_link(contract_id)
 
         # 2. Fetch Phase 6 backend hash
         try:
             hash_record = self.hash_service.get_contract_hash(contract_id)
-        except HTTPException as exc:
-            if exc.status_code == status.HTTP_404_NOT_FOUND:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Phase 6 contract hash for contract ID '{contract_id}' not found. Please generate Phase 6 hash first.",
-                ) from exc
-            raise
+        except Exception:
+            hash_record = None
+
+        if not hash_record:
+            try:
+                self.hash_service.generate_contract_hash(contract_id)
+                hash_record = self.hash_service.get_contract_hash(contract_id)
+            except Exception:
+                pass
+
+        if not hash_record:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Phase 6 contract hash for contract ID '{contract_id}' not found.",
+            )
 
         backend_sha256 = hash_record.contract_hash
 
@@ -134,11 +149,29 @@ class BlockchainService:
 
     def compare_expected_vs_actual(self, contract_id: str) -> ExpectedVsActualComparison:
         """Perform chronological payment reconciliation between Phase 5 expected cash flows and actual blockchain events."""
-        # 1. Fetch link
-        link = self.get_link(contract_id)
+        # 1. Fetch link (auto-link if configured)
+        link = self.link_repository.get_by_contract_id(contract_id)
+        if not link and settings.MST_CONTRACT_ADDRESS:
+            try:
+                link = self.link_contract(contract_id, settings.MST_CONTRACT_ADDRESS)
+            except Exception:
+                pass
+        if not link:
+            link = self.get_link(contract_id)
 
-        # 2. Fetch Phase 5 cash flow simulation result
+        # 2. Fetch Phase 5 cash flow simulation result (auto-generate if missing)
         sim_result = self.cash_flow_service.repository.get_by_contract_id(contract_id)
+        if not sim_result:
+            try:
+                from app.services.actus_service import actus_service
+                from app.services.actus_event_service import actus_event_service
+                actus_service.generate_mapping(contract_id)
+                actus_event_service.generate_events(contract_id)
+                self.cash_flow_service.calculate_cash_flows(contract_id)
+                sim_result = self.cash_flow_service.repository.get_by_contract_id(contract_id)
+            except Exception:
+                pass
+
         if not sim_result:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
