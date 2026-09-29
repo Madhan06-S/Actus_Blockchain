@@ -1,5 +1,6 @@
 """API endpoints for MST Blockchain state inspection, contract linking, hash verification, and payment reconciliation."""
 
+from decimal import Decimal
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -176,3 +177,27 @@ def compare_expected_vs_actual_payments(contract_id: str) -> ExpectedVsActualCom
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=err.message,
         ) from err
+
+
+class RecordPaymentRequest(BaseModel):
+    amount: float = Field(default=4614.49, description="Payment amount in INR")
+    contract_address: Optional[str] = Field(default=None, description="Optional target contract address")
+
+
+@router.post(
+    "/api/v1/blockchain/pay",
+    status_code=status.HTTP_200_OK,
+    summary="Record payment on MST Blockchain testnet",
+)
+def record_blockchain_payment(payload: Optional[RecordPaymentRequest] = None):
+    """Execute live payment transaction on MST Blockchain."""
+    amt = Decimal(str(payload.amount if payload else 4614.49))
+    addr = payload.contract_address if payload else None
+    try:
+        return blockchain_service.client.record_payment(contract_address=addr, amount_inr=amt)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Payment execution failed: {str(exc)}",
+        )
+

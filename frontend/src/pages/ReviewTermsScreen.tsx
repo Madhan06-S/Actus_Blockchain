@@ -13,6 +13,10 @@ export const ReviewTermsScreen: React.FC<ReviewTermsScreenProps> = ({ documentId
   const [terms, setTerms] = useState<CandidateTerms>(initialTerms);
   const [isEditing, setIsEditing] = useState(false);
 
+  React.useEffect(() => {
+    setTerms(initialTerms);
+  }, [initialTerms]);
+
   const handleTextChange = (field: keyof CandidateTerms, value: string) => {
     setTerms((prev) => ({ ...prev, [field]: value }));
   };

@@ -99,7 +99,33 @@ export const App: React.FC = () => {
     setStage('dashboard');
   };
 
-  // 4. Restart Workflow
+  // 4. Handle Live Blockchain Payment Recorded
+  const handlePaymentRecorded = (updatedItems: ComparisonItem[], paidAmount: number, _txHash: string) => {
+    setComparisonItems(updatedItems);
+    setStatusData((prev) => {
+      const currentPaid = parseFloat(prev.total_actual_paid) || 0;
+      const expectedTotal = parseFloat(prev.total_expected_amount) || 0;
+      const newPaid = currentPaid + paidAmount;
+      const newVariance = newPaid - expectedTotal;
+      const matched = prev.matched_payment_count + 1;
+      const unpaid = Math.max(0, prev.unpaid_payment_count - 1);
+      const isMatched = Math.abs(newVariance) < 0.01;
+
+      return {
+        ...prev,
+        total_actual_paid: newPaid.toFixed(2),
+        net_amount_variance: newVariance.toFixed(2),
+        matched_payment_count: matched,
+        unpaid_payment_count: unpaid,
+        overall_status: isMatched ? 'COMPLETED' : 'DEVIATION_DETECTED',
+        discrepancy_summary: isMatched
+          ? 'All scheduled payments have been recorded on MST Blockchain in full compliance.'
+          : `${unpaid} expected scheduled payment(s) remain pending on MST Blockchain.`,
+      };
+    });
+  };
+
+  // 5. Restart Workflow
   const handleRestart = () => {
     setDocumentId(null);
     setSelectedFile(null);
@@ -143,6 +169,7 @@ export const App: React.FC = () => {
               activeTab={activeTab}
               onRestart={handleRestart}
               setActiveTab={setActiveTab}
+              onPaymentRecorded={handlePaymentRecorded}
             />
           )}
         </main>

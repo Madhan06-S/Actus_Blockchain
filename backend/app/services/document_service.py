@@ -192,6 +192,24 @@ class DocumentService:
             doc.status = DocumentStatus.CONFIRMED
             self.repository.save(doc)
 
+        # Auto-initialize ACTUS mapping, events, cash flows, hash, and blockchain link
+        try:
+            from app.services.actus_service import actus_service
+            from app.services.actus_event_service import actus_event_service
+            from app.services.cash_flow_service import cash_flow_service
+            from app.services.contract_hash_service import contract_hash_service
+            from app.services.blockchain_service import blockchain_service
+            from app.core.config import settings
+
+            actus_service.generate_mapping(contract_resp.contract_id)
+            actus_event_service.generate_events(contract_resp.contract_id)
+            cash_flow_service.calculate_cash_flows(contract_resp.contract_id)
+            contract_hash_service.generate_contract_hash(contract_resp.contract_id)
+            if settings.MST_CONTRACT_ADDRESS:
+                blockchain_service.link_contract(contract_resp.contract_id, settings.MST_CONTRACT_ADDRESS)
+        except Exception:
+            pass
+
         return DocumentConfirmResponse(
             document_id=document_id,
             contract_id=contract_resp.contract_id,

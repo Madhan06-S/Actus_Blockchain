@@ -22,6 +22,7 @@ interface DashboardScreenProps {
   activeTab: string;
   onRestart: () => void;
   setActiveTab: (tab: string) => void;
+  onPaymentRecorded?: (updatedItems: ComparisonItem[], paidAmount: number, txHash: string) => void;
 }
 
 export const DashboardScreen: React.FC<DashboardScreenProps> = ({
@@ -32,6 +33,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
   activeTab,
   onRestart,
   setActiveTab,
+  onPaymentRecorded,
 }) => {
   const formatCurrency = (val: string) => {
     return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(parseFloat(val));
@@ -148,7 +150,7 @@ export const DashboardScreen: React.FC<DashboardScreenProps> = ({
 
       {/* SCHEDULE & TIMELINE TAB */}
       {(activeTab === 'overview' || activeTab === 'schedule') && (
-        <PaymentTimeline comparisonItems={comparisonItems} />
+        <PaymentTimeline comparisonItems={comparisonItems} onPaymentRecorded={onPaymentRecorded} />
       )}
 
       {/* RECORDED ACTIVITY TAB */}

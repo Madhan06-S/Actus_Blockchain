@@ -12,6 +12,7 @@ import type {
 } from '../types/contract';
 import {
   DEMO_FINANCIAL_CONTRACT,
+  DEMO_CANDIDATE_TERMS,
   DEMO_RISK_STATUS,
   DEMO_COMPARISON_ITEMS,
   DEMO_HASH_INFO,
@@ -43,16 +44,63 @@ export const contractsApi = {
 
   // Get Extracted Candidate Terms for Document (Phase 2)
   async getExtractedTerms(documentId: string): Promise<CandidateTerms> {
-    const res = await fetchApi<{ document_id: string; terms: CandidateTerms }>(`/api/v1/documents/${documentId}/terms`);
-    return res.terms;
+    const res = await fetchApi<{
+      document_id: string;
+      status: string;
+      fields?: Record<string, { value: string | null; confidence: string }>;
+      terms?: CandidateTerms;
+    }>(`/api/v1/documents/${documentId}/terms`);
+
+    if (res.fields) {
+      return {
+        principal: res.fields.principal?.value || '100000',
+        currency: res.fields.currency?.value || 'INR',
+        annual_interest_rate: res.fields.annual_interest_rate?.value || '10.0',
+        start_date: res.fields.start_date?.value || '2027-01-01',
+        maturity_date: res.fields.maturity_date?.value || '2029-01-01',
+        payment_frequency: (res.fields.payment_frequency?.value as any) || 'MONTHLY',
+        contract_role: 'RPA',
+        confidence: 0.95,
+      };
+    }
+    if (res.terms) {
+      return res.terms;
+    }
+    return DEMO_CANDIDATE_TERMS;
   },
 
   // Confirm PDF Terms & Create Validated FinancialContract (Phase 2)
   async confirmDocument(documentId: string, terms: CandidateTerms): Promise<{ contract: FinancialContract; terms: CandidateTerms }> {
-    return await fetchApi<{ contract: FinancialContract; terms: CandidateTerms }>(`/api/v1/documents/${documentId}/confirm`, {
+    const confirmRes = await fetchApi<{
+      document_id: string;
+      contract_id: string;
+      status: string;
+      message: string;
+    }>(`/api/v1/documents/${documentId}/confirm`, {
       method: 'POST',
-      body: JSON.stringify({ confirmed_terms: terms }),
+      body: JSON.stringify({
+        principal: parseFloat(terms.principal) || 100000,
+        currency: terms.currency || 'INR',
+        annual_interest_rate: parseFloat(terms.annual_interest_rate) || 10.0,
+        start_date: terms.start_date || '2027-01-01',
+        maturity_date: terms.maturity_date || '2029-01-01',
+        payment_frequency: terms.payment_frequency || 'MONTHLY',
+        contract_role: terms.contract_role || 'RPA',
+        description: `Uploaded contract from document ${documentId.substring(0, 8)}`,
+      }),
     });
+
+    const createdContract = await this.getContract(confirmRes.contract_id);
+    return { contract: createdContract, terms };
+  },
+
+  // Get Financial Contract by ID (Phase 1)
+  async getContract(contractId: string): Promise<FinancialContract> {
+    try {
+      return await fetchApi<FinancialContract>(`/api/v1/contracts/${contractId}`);
+    } catch {
+      return DEMO_FINANCIAL_CONTRACT;
+    }
   },
 
   // Create Financial Contract (Phase 1)
@@ -60,7 +108,16 @@ export const contractsApi = {
     try {
       return await fetchApi<FinancialContract>('/api/v1/contracts/', {
         method: 'POST',
-        body: JSON.stringify(terms),
+        body: JSON.stringify({
+          principal: parseFloat(terms.principal) || 100000,
+          currency: terms.currency || 'INR',
+          annual_interest_rate: parseFloat(terms.annual_interest_rate) || 10.0,
+          start_date: terms.start_date || '2027-01-01',
+          maturity_date: terms.maturity_date || '2029-01-01',
+          payment_frequency: terms.payment_frequency || 'MONTHLY',
+          contract_role: terms.contract_role || 'RPA',
+          description: 'Directly created ACTUS contract',
+        }),
       });
     } catch {
       return DEMO_FINANCIAL_CONTRACT;
@@ -92,6 +149,28 @@ export const contractsApi = {
     } catch {
       return DEMO_HASH_INFO;
     }
+  },
+
+  // Record Live Payment on MST Blockchain
+  async recordPayment(amount: number = 4614.49, contractAddress?: string): Promise<{
+    status: string;
+    transaction_hash: string;
+    block_number: number;
+    contract_address: string;
+    amount: number;
+    explorer_url: string;
+  }> {
+    return await fetchApi<{
+      status: string;
+      transaction_hash: string;
+      block_number: number;
+      contract_address: string;
+      amount: number;
+      explorer_url: string;
+    }>('/api/v1/blockchain/pay', {
+      method: 'POST',
+      body: JSON.stringify({ amount, contract_address: contractAddress }),
+    });
   },
 
   // --- FINANCIAL INTELLIGENCE ENDPOINTS ---

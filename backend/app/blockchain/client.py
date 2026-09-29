@@ -181,6 +181,54 @@ class MSTBlockchainClient:
         actual_payments.sort(key=lambda p: (p.payment_date, p.block_number, p.log_index))
         return actual_payments
 
+    def record_payment(
+        self,
+        contract_address: Optional[str] = None,
+        amount_inr: Decimal = Decimal("4614.49"),
+        private_key: Optional[str] = None,
+    ) -> dict:
+        """Execute a real recordPayment transaction on MST Blockchain."""
+        addr = contract_address or settings.MST_CONTRACT_ADDRESS
+        if not addr:
+            raise BlockchainNotConfiguredError("Contract address is missing.")
+        priv_key = private_key or settings.MST_PRIVATE_KEY
+        if not priv_key:
+            raise BlockchainNotConfiguredError("MST_PRIVATE_KEY is missing.")
+
+        checksum_addr = self.validate_address(addr)
+        w3 = self._get_w3()
+        account = w3.eth.account.from_key(priv_key)
+        wallet = account.address
+        amount_units = int(amount_inr * 100)
+
+        contract = w3.eth.contract(address=checksum_addr, abi=FINANCIAL_CONTRACT_V2_ABI)
+        nonce = w3.eth.get_transaction_count(wallet)
+        chain_id = self.expected_chain_id or w3.eth.chain_id
+
+        tx = contract.functions.recordPayment(amount_units).build_transaction({
+            "from": wallet,
+            "nonce": nonce,
+            "gas": 200_000,
+            "gasPrice": w3.to_wei("1", "gwei"),
+            "chainId": chain_id,
+        })
+        signed = w3.eth.account.sign_transaction(tx, private_key=priv_key)
+        tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+        receipt = w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
+        tx_hex = tx_hash.hex()
+        if not tx_hex.startswith("0x"):
+            tx_hex = f"0x{tx_hex}"
+
+        return {
+            "status": "SUCCESS" if receipt["status"] == 1 else "FAILED",
+            "transaction_hash": tx_hex,
+            "block_number": int(receipt["blockNumber"]),
+            "contract_address": checksum_addr,
+            "amount": float(amount_inr),
+            "explorer_url": f"https://testnet.mstscan.com/tx/{tx_hex}",
+        }
+
 
 # Global client instance
 blockchain_client = MSTBlockchainClient()
+

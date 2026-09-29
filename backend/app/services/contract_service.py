@@ -45,10 +45,6 @@ class ContractService:
         # Store contract in repository
         saved_contract = self.repository.save(domain_contract)
 
-        # NOTE FOR FUTURE PHASES:
-        # Here is the ACTUS integration boundary. Future phases will invoke:
-        # actus_contract = actus_service.convert(saved_contract)
-
         return FinancialContractResponse.model_validate(saved_contract)
 
     def get_contract_by_id(self, contract_id: str) -> Optional[FinancialContractResponse]:

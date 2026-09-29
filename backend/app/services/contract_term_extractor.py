@@ -148,39 +148,46 @@ class ContractTermExtractor:
 
     @staticmethod
     def _extract_principal(text: str) -> Tuple[Optional[str], ConfidenceLevel, Optional[str]]:
-        # Pattern 1: "Principal amount: ₹100,000", "loan amount of INR 100,000", or "loan amount of 100,000"
-        pattern1 = r"(?:principal(?:\s+amount)?|loan\s+amount(?:\s+of)?|sum\s+of)\s*:?\s*[^\d\s]*\s*([\d,]+(?:\.\d+)?)"
+        # Pattern 1: "Principal amount: ₹100,000", "loan amount of INR 100,000", "loan of 2,00,000"
+        pattern1 = r"(?:principal(?:\s+amount|\s+sum)?|loan\s+amount(?:\s+of)?|loan\s+of|sum\s+of|total\s+loan)\s*:?\s*[^\d\s]*\s*([\d,]+(?:\.\d+)?)"
         match = re.search(pattern1, text, re.IGNORECASE)
         if match:
             raw_val = match.group(1).replace(",", "")
             return raw_val, ConfidenceLevel.HIGH, match.group(0)
 
-        # Pattern 2: "INR 100,000" or "₹100,000"
-        pattern2 = r"(?:INR|USD|EUR|GBP|₹|\$|€|£)\s*([\d,]+(?:\.\d+)?)"
+        # Pattern 2: "INR 100,000", "₹100,000", "Rs. 200000", "Rs 50,000"
+        pattern2 = r"(?:INR|USD|EUR|GBP|₹|Rs\.?|\$|€|£)\s*([\d,]+(?:\.\d+)?)"
         match2 = re.search(pattern2, text, re.IGNORECASE)
         if match2:
             raw_val = match2.group(1).replace(",", "")
             return raw_val, ConfidenceLevel.MEDIUM, match2.group(0)
 
-        # Pattern 3: "100000 INR"
-        pattern3 = r"([\d,]+(?:\.\d+)?)\s*(?:INR|USD|EUR|GBP)"
+        # Pattern 3: "100000 INR", "50000 Rupees"
+        pattern3 = r"([\d,]+(?:\.\d+)?)\s*(?:INR|USD|EUR|GBP|Rupees|rs\.?)"
         match3 = re.search(pattern3, text, re.IGNORECASE)
         if match3:
             raw_val = match3.group(1).replace(",", "")
             return raw_val, ConfidenceLevel.MEDIUM, match3.group(0)
 
+        # Pattern 4: Amount / Value
+        pattern4 = r"(?:amount|value|borrowed)\s*:?\s*[^\d\s]*\s*([\d,]+(?:\.\d+)?)"
+        match4 = re.search(pattern4, text, re.IGNORECASE)
+        if match4:
+            raw_val = match4.group(1).replace(",", "")
+            return raw_val, ConfidenceLevel.MEDIUM, match4.group(0)
+
         return None, ConfidenceLevel.NOT_FOUND, None
 
     @staticmethod
     def _extract_interest_rate(text: str) -> Tuple[Optional[str], ConfidenceLevel, Optional[str]]:
-        # Pattern 1: "annual interest rate: 10%" or "interest rate: 10% per annum"
-        pattern1 = r"(?:annual\s+)?interest(?:\s+rate)?\s*:?\s*([\d.]+)\s*(?:%|percent)"
+        # Pattern 1: "annual interest rate: 10%" or "interest rate: 10% per annum" or "rate: 12%"
+        pattern1 = r"(?:annual\s+)?interest(?:\s+rate)?\s*:?\s*([\d.]+)\s*(?:%|percent)?"
         match = re.search(pattern1, text, re.IGNORECASE)
         if match:
             return match.group(1), ConfidenceLevel.HIGH, match.group(0)
 
-        # Pattern 2: "10% per annum", "10 percent annual interest", "10% annual interest"
-        pattern2 = r"([\d.]+)\s*(?:%|percent)\s*(?:per\s+annum|annual|p\.a\.)?(?:\s+interest)?"
+        # Pattern 2: "10% per annum", "10 percent annual interest", "10% annual interest", "@ 12%"
+        pattern2 = r"(?:@\s*)?([\d.]+)\s*(?:%|percent)\s*(?:per\s+annum|annual|p\.a\.)?(?:\s+interest)?"
         match2 = re.search(pattern2, text, re.IGNORECASE)
         if match2:
             return match2.group(1), ConfidenceLevel.HIGH, match2.group(0)
@@ -189,7 +196,7 @@ class ContractTermExtractor:
 
     @staticmethod
     def _extract_start_date(text: str) -> Tuple[Optional[str], ConfidenceLevel, Optional[str]]:
-        pattern = r"(?:start|commencement|inception|effective)\s+date\s*:?\s*([A-Za-z]+\s+\d{1,2},\s*\d{4}|\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}[/-]\d{4})"
+        pattern = r"(?:start|commencement|inception|effective|disbursement)\s+date\s*:?\s*([A-Za-z]+\s+\d{1,2},\s*\d{4}|\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}[/-]\d{4})"
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
             raw_date = match.group(1)
@@ -198,7 +205,7 @@ class ContractTermExtractor:
                 return norm_date, ConfidenceLevel.HIGH, match.group(0)
 
         # Fallback date pattern
-        fallback = r"\b([A-Za-z]+\s+\d{1,2},\s*\d{4})\b"
+        fallback = r"\b([A-Za-z]+\s+\d{1,2},\s*\d{4}|\d{4}-\d{2}-\d{2})\b"
         matches = list(re.finditer(fallback, text, re.IGNORECASE))
         if len(matches) >= 1:
             raw_date = matches[0].group(1)
@@ -210,7 +217,7 @@ class ContractTermExtractor:
 
     @staticmethod
     def _extract_maturity_date(text: str) -> Tuple[Optional[str], ConfidenceLevel, Optional[str]]:
-        pattern = r"(?:maturity|expiry|end)\s+date\s*:?\s*([A-Za-z]+\s+\d{1,2},\s*\d{4}|\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}[/-]\d{4})"
+        pattern = r"(?:maturity|expiry|end|termination)\s+date\s*:?\s*([A-Za-z]+\s+\d{1,2},\s*\d{4}|\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}[/-]\d{4})"
         match = re.search(pattern, text, re.IGNORECASE)
         if match:
             raw_date = match.group(1)
@@ -219,7 +226,7 @@ class ContractTermExtractor:
                 return norm_date, ConfidenceLevel.HIGH, match.group(0)
 
         # Fallback second date match if 2 dates present in text
-        fallback = r"\b([A-Za-z]+\s+\d{1,2},\s*\d{4})\b"
+        fallback = r"\b([A-Za-z]+\s+\d{1,2},\s*\d{4}|\d{4}-\d{2}-\d{2})\b"
         matches = list(re.finditer(fallback, text, re.IGNORECASE))
         if len(matches) >= 2:
             raw_date = matches[1].group(1)
@@ -233,4 +240,9 @@ class ContractTermExtractor:
     def _extract_payment_frequency(text: str) -> Tuple[Optional[str], ConfidenceLevel, Optional[str]]:
         if re.search(r"\bmonthly\b|payments?\s+shall\s+be\s+made\s+monthly|paid\s+monthly", text, re.IGNORECASE):
             return "MONTHLY", ConfidenceLevel.HIGH, "monthly"
-        return None, ConfidenceLevel.NOT_FOUND, None
+        if re.search(r"\bquarterly\b|paid\s+quarterly", text, re.IGNORECASE):
+            return "QUARTERLY", ConfidenceLevel.HIGH, "quarterly"
+        if re.search(r"\bannually\b|\byearly\b|paid\s+annually", text, re.IGNORECASE):
+            return "ANNUALLY", ConfidenceLevel.HIGH, "annually"
+        return "MONTHLY", ConfidenceLevel.MEDIUM, "default monthly"
+
