@@ -1,4 +1,4 @@
-import { fetchApi } from './client';
+import { fetchApi, BASE_URL } from './client';
 import type {
   FinancialContract,
   CandidateTerms,
@@ -27,7 +27,7 @@ export const contractsApi = {
 
     let res: Response;
     try {
-      res = await fetch('http://localhost:8000/api/v1/documents/upload', {
+      res = await fetch(`${BASE_URL}/api/v1/documents/upload`, {
         method: 'POST',
         body: formData,
       });
