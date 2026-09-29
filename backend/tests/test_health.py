@@ -13,7 +13,7 @@ def test_read_root() -> None:
     json_data = response.json()
     assert "message" in json_data
     assert "status" in json_data
-    assert json_data["message"] == "ACTUS Financial Contract Backend"
+    assert json_data["message"] == "ActuCore Financial Backend"
     assert json_data["status"] == "running"
 
 

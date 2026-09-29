@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Central settings configuration loaded from environment variables or .env file."""
 
-    APP_NAME: str = "ACTUS Financial Contract Backend"
+    APP_NAME: str = "ActuCore Financial Backend"
     APP_ENV: str = "development"
     DEBUG: bool = True
     PORT: int = 8000

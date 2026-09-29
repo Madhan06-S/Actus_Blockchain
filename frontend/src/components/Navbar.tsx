@@ -31,11 +31,11 @@ export const Navbar: React.FC = () => {
           <Shield size={22} />
         </div>
         <div>
-          <h1 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#0f172a', margin: 0, lineHeight: 1.2 }}>
-            ACTUS Financial Reconciliation
+          <h1 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0f172a', margin: 0, lineHeight: 1.2, letterSpacing: '-0.02em' }}>
+            ActuCore
           </h1>
           <p style={{ fontSize: '0.78rem', color: '#64748b', margin: 0 }}>
-            Programmable Contract Operations on MST Blockchain
+            Programmable ACTUS Contract Reconciliation on MST Blockchain
           </p>
         </div>
       </div>

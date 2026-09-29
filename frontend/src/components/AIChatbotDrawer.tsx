@@ -22,7 +22,7 @@ export const AIChatbotDrawer: React.FC<AIChatbotDrawerProps> = ({ contractId }) 
     {
       id: 'welcome',
       sender: 'bot',
-      text: 'Hello! I am your AI Financial Assistant. Ask me anything about this contract, expected payments, blockchain activity, or risk analysis.',
+      text: 'Hello! I am your ActuCore AI Financial Assistant. Ask me anything about this contract, expected payments, blockchain activity, or risk analysis.',
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     },
   ]);

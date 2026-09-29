@@ -1,8 +1,8 @@
-# ACTUS-Powered Programmable Financial Contracts on MST Blockchain
+# ActuCore — ACTUS-Powered Programmable Financial Contracts on MST Blockchain
 
 ## Project Overview
 
-This project builds a backend system for **ACTUS-Powered Programmable Financial Contracts on MST Blockchain**. The platform standardizes complex financial contracts (such as loans, bonds, and derivatives) using the **ACTUS (Algorithmic Contract Types Unified Standard)** framework and connects them with smart contracts on the **MST Blockchain** for automated execution, settlement, and risk monitoring.
+**ActuCore** is an institutional financial intelligence and automated reconciliation platform for **ACTUS-Powered Programmable Financial Contracts on MST Blockchain**. The platform standardizes complex financial contracts (such as loans, bonds, and credit facilities) using the **ACTUS (Algorithmic Contract Types Unified Standard)** framework and connects them with smart contracts on the **MST Blockchain** for automated execution, settlement verification, risk monitoring, and scenario stress testing.
 
 ---
 
