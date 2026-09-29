@@ -24,3 +24,18 @@ def test_read_health() -> None:
     json_data = response.json()
     assert "status" in json_data
     assert json_data["status"] == "healthy"
+
+
+def test_cors_headers_allowed_origin() -> None:
+    """Test that CORS headers are returned for allowed frontend origin http://localhost:5173."""
+    response = client.options(
+        "/health",
+        headers={
+            "Origin": "http://localhost:5173",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers.get("access-control-allow-origin") == "http://localhost:5173"
+    assert response.headers.get("access-control-allow-credentials") == "true"
+

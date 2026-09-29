@@ -12,6 +12,18 @@ class Settings(BaseSettings):
     PORT: int = 8000
     HOST: str = "0.0.0.0"
 
+    # CORS Origins
+    CORS_ORIGINS: list[str] = [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+        "http://localhost:5175",
+        "http://127.0.0.1:5175",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ]
+
     # MST Blockchain Configuration
     MST_RPC_URL: str = "https://testnetrpc.mstblockchain.com"
     MST_CHAIN_ID: int = 91562037

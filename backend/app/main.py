@@ -7,6 +7,7 @@ if str(backend_dir) not in sys.path:
     sys.path.insert(0, str(backend_dir))
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes.actus import router as actus_router
 from app.api.routes.actus_events import router as actus_events_router
@@ -27,6 +28,16 @@ def create_application() -> FastAPI:
         description="ACTUS-Powered Programmable Financial Contracts Backend",
         version="0.1.0",
         debug=settings.DEBUG,
+    )
+
+    # Configure CORS middleware
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.CORS_ORIGINS,
+        allow_origin_regex=r"http://(localhost|127\.0\.0\.1):(517[0-9]|3000)",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     # Register API routers
